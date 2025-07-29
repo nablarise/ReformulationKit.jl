@@ -147,39 +147,6 @@ function test_reformulation_ok()
     @test length(reformulation.coupling_constraints) == 3
 end
 
-# Variable annotation tests
-function test_variable_assignment_ok()
-    J = 1:2;
-    M = 1:2;
-    model = Model();
-    @variable(model, x[M, J], Bin);
-    @constraint(model, cov[j in J], sum(x[m, j] for m in M) >= 1);
-    @constraint(model, knp[m in M], sum(x[m, j] for j in J) <= 2);
-    @objective(model, Min, sum(x[m, j] for m in M, j in J));
-
-    reformulation = RK.dantzig_wolfe_decomposition(model, dw_annotation)
-    subproblems = RK.subproblems(reformulation)
-
-    println(model)
-    println("----")
-    println(RK.master(reformulation))
-    println("----")
-    println(subproblems[1])
-    println("----")
-    println(subproblems[2])
-
-    println("----")
-    @show subproblems[1].ext[:dw_coupling_constr_mapping]
-    println("---")
-    @show subproblems[1].ext[:dw_sp_var_original_cost]
-
-    subproblem_m1 = subproblems[1]
-    x_m1 = subproblem_m1[:x]
-    @show x_m1
-    @show x_m1[1,1]
-    @show x_m1[1,2]
-
-end
 
 
 # Include all test modules
@@ -190,10 +157,7 @@ include("dantzig_wolfe/main.jl")
 
 function run()
     @testset "ReformulationKit Unit Tests" begin
-        # Legacy tests (to be updated)
-        test_variable_assignment_ok()
-        
-        # New comprehensive unit tests
+        # Comprehensive unit tests
         test_unit_partitioning()
         test_unit_models()
         test_unit_reformulation_structure()

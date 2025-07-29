@@ -107,8 +107,6 @@ function test_register_constraints_maps_variables_ok()
     
     @test haskey(reform_model.obj_dict, :test_constraint)
     reform_constraint = reform_model[:test_constraint][()]
-    @show reform_constraint
-    @show typeof(reform_constraint)
     constraint_obj = JuMP.constraint_object(reform_constraint)
     
     # Check that the constraint uses reform variables
