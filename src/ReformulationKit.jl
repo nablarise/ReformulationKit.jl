@@ -134,7 +134,27 @@ end
 
 function _replace_vars_in_func(func::JuMP.AffExpr, original_to_subproblem_vars_mapping)
     terms = [original_to_subproblem_vars_mapping[var] => coeff for (var, coeff) in func.terms]
-    return JuMP.AffExpr(func.constant, terms...)
+    return AffExpr(func.constant, terms...)
+end
+
+function _register_variables!(reform_model, original_to_reform_mapping, original_model, var_infos_by_names)      
+    for (var_name, var_infos_by_indexes) in var_infos_by_names
+        vars = Containers.container(
+            (index...) -> begin
+                var = JuMP.build_variable(() -> error("todo."), var_infos_by_indexes[index])
+                jump_var_name = if JuMP.set_string_names_on_creation(reform_model)
+                    JuMP.string(var_name, "[", JuMP.string(index), "]")
+                else
+                    ""
+                end
+
+                original_var = object_dictionary(original_model)[var_name][index...]
+                original_to_reform_mapping[original_var] = JuMP.add_variable(reform_model, var, jump_var_name)
+            end,
+            collect(keys(var_infos_by_indexes))
+        )
+        reform_model[var_name] = vars
+    end
 end
 
 function dantzig_wolfe_decomposition(model::Model, dw_annotation)
@@ -186,30 +206,14 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
         ) for (sp_id, var_by_names) in sp_vars_partitionning
     )
 
-    original_to_subproblem_mapping = Dict()
+    original_to_reform_mapping = Dict()
     for (sp_id, var_infos_by_names) in subproblem_var_infos
         sp_model = subproblem_models[sp_id]
-        for (var_name, var_infos_by_indexes) in var_infos_by_names
-            vars = Containers.container(
-                (index...) -> begin
-                    var = JuMP.build_variable(() -> error("todo."), var_infos_by_indexes[index])
-                    jump_var_name = if JuMP.set_string_names_on_creation(sp_model)
-                        JuMP.string(var_name, "[", JuMP.string(index), "]")
-                    else
-                        ""
-                    end
-
-                    original_var = object_dictionary(model)[var_name][index...]
-                    original_to_subproblem_mapping[original_var] = JuMP.add_variable(sp_model, var, jump_var_name)
-                end,
-                collect(keys(var_infos_by_indexes))
-            )
-            sp_model[var_name] = vars
-        end
+        _register_variables!(sp_model, original_to_reform_mapping, model, var_infos_by_names)
     end
 
     @show sp_constrs_paritionning
-    @show original_to_subproblem_mapping
+    @show original_to_reform_mapping
 
     # Create subproblem constraints
     for (sp_id, constr_by_names) in sp_constrs_paritionning
@@ -221,7 +225,7 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
                     original_constr_obj = JuMP.constraint_object(original_constr)
                     mapped_func = _replace_vars_in_func(
                         original_constr_obj.func, 
-                        original_to_subproblem_mapping
+                        original_to_reform_mapping
                     )
                     constr = JuMP.build_constraint(() -> error("todo."), mapped_func, original_constr_obj.set)
                     jump_constr_name = if JuMP.set_string_names_on_creation(sp_model)
