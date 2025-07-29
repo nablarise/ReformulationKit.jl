@@ -1,4 +1,5 @@
 .claude
+Manifest.toml
 docs/build
-docs/src/tutorials/*.jl
-docs/src/tutorials/**/*.jl
+docs/src/tutorials/*.md
+docs/src/tutorials/**/*.md
