@@ -1,1 +1,4 @@
 .claude
+docs/build
+docs/src/tutorials/*.jl
+docs/src/tutorials/**/*.jl
