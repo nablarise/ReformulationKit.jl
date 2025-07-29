@@ -41,11 +41,8 @@ function _original_var_info(original_model, var_name, index)
     )
 end
 
-function dantzig_wolfe_decomposition(model::Model, dw_annotation)
-    # Parse variables and their annotations
+function _partition_subproblem_variables(model, dw_annotation)
     sp_vars_partitionning = Dict{Any,Dict{Symbol,Set{Tuple}}}()
-
-
     for (var_name, var_obj) in object_dictionary(model)
         # Only process variables, not constraints
         if var_obj isa AbstractArray && length(var_obj) > 0 && first(var_obj) isa AbstractVariableRef
@@ -73,24 +70,76 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
             end
         end
     end
+    return sp_vars_partitionning
+end
 
-    @show sp_vars_partitionning
+function _master_constraints(model, dw_annotation)
+    master_constrs = Dict{Symbol, Set{Tuple}}()
 
-    # # Parse constraints and their annotations
-    # constraint_to_destination = Dict()
+     for (constr_name, constr_obj) in object_dictionary(model)
+        # Only process constraints, not variables
+        if constr_obj isa AbstractArray && length(constr_obj) > 0 && first(constr_obj) isa ConstraintRef
+            for idx in _eachindex(constr_obj)
+                annotation = dw_annotation(Val(constr_name), Tuple(idx)...)
+                if annotation isa MasterAnnotation
+                    if !haskey(master_constrs, constr_name)
+                        master_constrs[constr_name] = Set{Tuple}()
+                    end
+                    push!(master_constrs[constr_name], Tuple(idx))
+                end
+            end
+        elseif constr_obj isa ConstraintRef
+            annotation = dw_annotation(Val(constr_name))
+            if annotation isa MasterAnnotation
+                if !haskey(master_constrs, constr_name)
+                    master_constrs[constr_name] = Set{Tuple}(())
+                end
+            end
+        end
+    end
+    return master_constrs
+end
 
-    # for (constr_name, constr_obj) in object_dictionary(model)
-    #     # Only process constraints, not variables
-    #     if constr_obj isa AbstractArray && length(constr_obj) > 0 && first(constr_obj) isa ConstraintRef
-    #         for idx in _eachindex(constr_obj)
-    #             annotation = dw_annotation(Val(constr_name), Tuple(idx)...)
-    #             constraint_to_destination[(constr_name, Tuple(idx))] = annotation
-    #         end
-    #     elseif constr_obj isa ConstraintRef
-    #         annotation = dw_annotation(Val(constr_name))
-    #         constraint_to_destination[(constr_name,)] = annotation
-    #     end
-    # end
+function _partition_subproblem_constraints(model, dw_annotation)
+    sp_constrs_partitionning = Dict{Any,Dict{Symbol,Set{Tuple}}}()
+     for (constr_name, constr_obj) in object_dictionary(model)
+        # Only process constraints, not variables
+        if constr_obj isa AbstractArray && length(constr_obj) > 0 && first(constr_obj) isa ConstraintRef
+            for idx in _eachindex(constr_obj)
+                annotation = dw_annotation(Val(constr_name), Tuple(idx)...)
+                if annotation isa SubproblemAnnotation
+                    if !haskey(sp_constrs_partitionning, annotation.id)
+                        sp_constrs_partitionning[annotation.id] = Dict{Symbol,Set{Tuple}}()
+                    end
+                    if !haskey(sp_constrs_partitionning[annotation.id], constr_name)
+                        sp_constrs_partitionning[annotation.id][constr_name] = Set{Tuple}()
+                    end
+                    push!(sp_constrs_partitionning[annotation.id][constr_name], Tuple(idx))
+                end
+            end
+        elseif constr_obj isa ConstraintRef
+            annotation = dw_annotation(Val(constr_name))
+            if annotation isa SubproblemAnnotation
+                if !haskey(sp_constrs_partitionning, annotation.id)
+                    sp_constrs_partitionning[annotation.id] = Dict{Symbol,Set{Tuple}}()
+                end
+                if !haskey(sp_constrs_partitionning[annotation.id], constr_name)
+                    sp_constrs_partitionning[annotation.id][constr_name] = Set{Tuple}()
+                end
+            end
+        end
+    end
+    return sp_constrs_partitionning
+end
+
+function dantzig_wolfe_decomposition(model::Model, dw_annotation)
+    # Parse variables and their annotations
+    # TODO: master variables missing.
+    sp_vars_partitionning = _partition_subproblem_variables(model, dw_annotation)
+
+    master_constrs = _master_constraints(model, dw_annotation)
+    sp_constrs_paritionning = _partition_subproblem_constraints(model, dw_annotation)
+
 
     # # Create master problem
     # 
@@ -130,8 +179,6 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
         ) for (sp_id, var_by_names) in sp_vars_partitionning
     )
     
-    @show subproblem_var_infos
-
     for (sp_id, var_infos_by_names) in subproblem_var_infos
         sp_model = subproblem_models[sp_id]
         for (var_name, var_infos_by_indexes) in var_infos_by_names
