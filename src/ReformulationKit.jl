@@ -137,7 +137,7 @@ function _replace_vars_in_func(func::JuMP.AffExpr, original_to_subproblem_vars_m
     return AffExpr(func.constant, terms...)
 end
 
-function _register_variables!(reform_model, original_to_reform_mapping, original_model, var_infos_by_names)      
+function _register_variables!(reform_model, original_to_reform_mapping, original_model, var_infos_by_names)
     for (var_name, var_infos_by_indexes) in var_infos_by_names
         vars = Containers.container(
             (index...) -> begin
@@ -154,6 +154,30 @@ function _register_variables!(reform_model, original_to_reform_mapping, original
             collect(keys(var_infos_by_indexes))
         )
         reform_model[var_name] = vars
+    end
+end
+
+function _register_constraints!(reform_model, original_to_reform_constr_mapping, original_model, constr_by_names, original_to_reform_vars_mapping)
+    for (constr_name, constr_by_indexes) in constr_by_names
+        constrs = JuMP.Containers.container(
+            (index...) -> begin
+                original_constr = object_dictionary(original_model)[constr_name][index...]
+                original_constr_obj = JuMP.constraint_object(original_constr)
+                mapped_func = _replace_vars_in_func(
+                    original_constr_obj.func,
+                    original_to_reform_vars_mapping
+                )
+                constr = JuMP.build_constraint(() -> error("todo."), mapped_func, original_constr_obj.set)
+                jump_constr_name = if JuMP.set_string_names_on_creation(reform_model)
+                    JuMP.string(constr_name, "[", JuMP.string(index), "]")
+                else
+                    ""
+                end
+                original_to_reform_constr_mapping[original_constr] = JuMP.add_constraint(reform_model, constr, jump_constr_name)
+            end,
+            collect(constr_by_indexes)
+        )
+        reform_model[constr_name] = constrs
     end
 end
 
@@ -206,40 +230,23 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
         ) for (sp_id, var_by_names) in sp_vars_partitionning
     )
 
-    original_to_reform_mapping = Dict()
+    original_to_reform_vars_mapping = Dict()
     for (sp_id, var_infos_by_names) in subproblem_var_infos
         sp_model = subproblem_models[sp_id]
-        _register_variables!(sp_model, original_to_reform_mapping, model, var_infos_by_names)
+        _register_variables!(sp_model, original_to_reform_vars_mapping, model, var_infos_by_names)
     end
 
     @show sp_constrs_paritionning
-    @show original_to_reform_mapping
+    @show original_to_reform_vars_mapping
 
+    original_to_reform_constrs_mapping = Dict()
     # Create subproblem constraints
     for (sp_id, constr_by_names) in sp_constrs_paritionning
         sp_model = subproblem_models[sp_id]
-        for (constr_name, constr_by_indexes) in constr_by_names
-            constrs = JuMP.Containers.container(
-                (index...) -> begin
-                    original_constr = object_dictionary(model)[constr_name][index...]
-                    original_constr_obj = JuMP.constraint_object(original_constr)
-                    mapped_func = _replace_vars_in_func(
-                        original_constr_obj.func, 
-                        original_to_reform_mapping
-                    )
-                    constr = JuMP.build_constraint(() -> error("todo."), mapped_func, original_constr_obj.set)
-                    jump_constr_name = if JuMP.set_string_names_on_creation(sp_model)
-                        JuMP.string(constr_name, "[", JuMP.string(index), "]")
-                    else
-                        ""
-                    end
-                    JuMP.add_constraint(sp_model, constr, jump_constr_name)
-                end,
-                collect(constr_by_indexes)
-            )
-            sp_model[constr_name] = constrs
-        end
+        _register_constraints!(sp_model, original_to_reform_constrs_mapping, model, constr_by_names, original_to_reform_vars_mapping)
     end
+
+    @show original_to_reform_constrs_mapping
 
     #     julia> obj = constraint_object(cstr[1])
     # ScalarConstraint{AffExpr, MathOptInterface.LessThan{Float64}}(x[1] + x[2] + x[3] + x[4] + x[5] + x[6] + x[7] + x[8] + x[9] + x[10], MathOptInterface.LessThan{Float64}(1.0))
