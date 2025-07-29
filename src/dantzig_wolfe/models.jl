@@ -1,6 +1,14 @@
+function get_scalar_object(model, object_name, index)
+    return object_dictionary(model)[object_name][index...]
+end
+
+function get_scalar_object(model,  object_name, ::Tuple{})
+    return object_dictionary(model)[object_name]
+end
+
 # Extract VariableInfo from original model variable for reformulation
 function _original_var_info(original_model, var_name, index)
-    original_var = object_dictionary(original_model)[var_name][index...]
+    original_var = get_scalar_object(original_model, var_name, index)
     has_upper_bound = JuMP.has_upper_bound(original_var)
     has_lower_bound = JuMP.has_lower_bound(original_var)
     is_fixed = JuMP.is_fixed(original_var)
@@ -28,6 +36,13 @@ function _replace_vars_in_func(func::JuMP.AffExpr, target_model, original_to_sub
     return AffExpr(func.constant, terms...)
 end
 
+function _replace_vars_in_func(single_var::JuMP.VariableRef, target_model, original_to_subproblem_vars_mapping)
+    if JuMP.owner_model(original_to_subproblem_vars_mapping[single_var]) == target_model
+        return original_to_subproblem_vars_mapping[single_var]
+    end
+    return 0.0
+end
+
 # Create and register variables in reform model, updating variable mapping
 function _register_variables!(reform_model, original_to_reform_mapping, original_model, var_infos_by_names)
     for (var_name, var_infos_by_indexes) in var_infos_by_names
@@ -39,7 +54,7 @@ function _register_variables!(reform_model, original_to_reform_mapping, original
                 else
                     ""
                 end
-                original_var = object_dictionary(original_model)[var_name][index...]
+                original_var = get_scalar_object(original_model, var_name, index)
                 original_to_reform_mapping[original_var] = JuMP.add_variable(reform_model, var, jump_var_name)
             end,
             collect(keys(var_infos_by_indexes))
@@ -53,7 +68,7 @@ function _register_constraints!(reform_model, original_to_reform_constr_mapping,
     for (constr_name, constr_by_indexes) in constr_by_names
         constrs = JuMP.Containers.container(
             (index...) -> begin
-                original_constr = object_dictionary(original_model)[constr_name][index...]
+                original_constr = get_scalar_object(original_model, constr_name, index)
                 original_constr_obj = JuMP.constraint_object(original_constr)
                 mapped_func = _replace_vars_in_func(
                     original_constr_obj.func,
@@ -101,12 +116,19 @@ function _subproblem_solution_to_master_constr_mapping!(subproblem_models, maste
     end
 end
 
-function _populate_cost_mapping(master_model, original_obj_expr::AffExpr, original_to_reform_vars_mapping)
+function _populate_cost_mapping(master_model, original_obj_expr::JuMP.AffExpr, original_to_reform_vars_mapping)
     for (original_var, cost) in original_obj_expr.terms
         reform_var = original_to_reform_vars_mapping[original_var]
         if JuMP.owner_model(reform_var) != master_model
             JuMP.owner_model(reform_var).ext[:dw_sp_var_original_cost][reform_var] = cost
         end
+    end
+end
+
+function _populate_cost_mapping(master_model, single_var::JuMP.VariableRef, original_to_reform_vars_mapping)
+    reform_var = original_to_reform_vars_mapping[single_var]
+    if JuMP.owner_model(reform_var) != master_model
+        JuMP.owner_model(reform_var).ext[:dw_sp_var_original_cost][reform_var] = 1.0
     end
 end
 
@@ -122,16 +144,9 @@ function _register_objective!(reform_model, model, original_to_reform_vars_mappi
     original_obj_func = JuMP.objective_function(model)
     original_obj_sense = JuMP.objective_sense(model)
     
-    # Filter variables to keep only those belonging to reform_model
-    filtered_terms = [
-        original_to_reform_vars_mapping[var] => coeff 
-        for (var, coeff) in original_obj_func.terms
-        if JuMP.owner_model(original_to_reform_vars_mapping[var]) == reform_model
-    ]
-    
     # Create new AffExpr with filtered terms and original constant
-    reform_obj_func = AffExpr(original_obj_func.constant, filtered_terms...)
-    
+    reform_obj_func = _replace_vars_in_func(original_obj_func, reform_model, original_to_reform_vars_mapping)
+        
     # Set objective on reform_model
     JuMP.set_objective_sense(reform_model, original_obj_sense)
     JuMP.set_objective_function(reform_model, reform_obj_func)

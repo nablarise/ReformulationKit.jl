@@ -1,6 +1,6 @@
 name = "ReformulationKit"
 uuid = "ccf8701a-f1e2-43fb-9872-b69ec7886d0a"
-authors = ["Guillaume Marques <guillaume.marques@protonmail.com>"]
+authors = ["Guillaume Marques <guillaume@nablarise.com>"]
 version = "0.1.0"
 
 [deps]

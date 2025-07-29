@@ -8,18 +8,19 @@ function _master_variables(model, dw_annotation)
             for idx in _eachindex(var_obj)
                 annotation = dw_annotation(Val(var_name), Tuple(idx)...)
                 if annotation isa MasterAnnotation
-                    if !haskey(master_vars[annotation.id], var_name)
-                        master_vars[annotation.id][var_name] = Set{Tuple}()
+                    if !haskey(master_vars, var_name)
+                        master_vars[var_name] = Set{Tuple}()
                     end
-                    push!(master_vars[annotation.id][var_name], Tuple(idx))
+                    push!(master_vars[var_name], Tuple(idx))
                 end
             end
         elseif var_obj isa AbstractVariableRef
             annotation = dw_annotation(Val(var_name))
             if annotation isa MasterAnnotation
-                if !haskey(master_vars[annotation.id], var_name)
-                    master_vars[annotation.id][var_name] = Set{Tuple{}}(())
+                if !haskey(master_vars, var_name)
+                    master_vars[var_name] = Set{Tuple}()
                 end
+                push!(master_vars[var_name], ())
             end
         end
     end
