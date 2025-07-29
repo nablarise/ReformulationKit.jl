@@ -41,6 +41,33 @@ function _original_var_info(original_model, var_name, index)
     )
 end
 
+function _master_variables(model, dw_annotation)
+    master_vars = Dict{Symbol,Set{Tuple}}()
+
+    for (var_name, var_obj) in object_dictionary(model)
+        # Only process variables, not constraints
+        if var_obj isa AbstractArray && length(var_obj) > 0 && first(var_obj) isa AbstractVariableRef
+            for idx in _eachindex(var_obj)
+                annotation = dw_annotation(Val(var_name), Tuple(idx)...)
+                if annotation isa MasterAnnotation
+                    if !haskey(master_vars[annotation.id], var_name)
+                        master_vars[annotation.id][var_name] = Set{Tuple}()
+                    end
+                    push!(master_vars[annotation.id][var_name], Tuple(idx))
+                end
+            end
+        elseif var_obj isa AbstractVariableRef
+            annotation = dw_annotation(Val(var_name))
+            if annotation isa MasterAnnotation
+                if !haskey(master_vars[annotation.id], var_name)
+                    master_vars[annotation.id][var_name] = Set{Tuple{}}(())
+                end
+            end
+        end
+    end
+    return master_vars
+end
+
 function _partition_subproblem_variables(model, dw_annotation)
     sp_vars_partitionning = Dict{Any,Dict{Symbol,Set{Tuple}}}()
     for (var_name, var_obj) in object_dictionary(model)
@@ -132,8 +159,12 @@ function _partition_subproblem_constraints(model, dw_annotation)
     return sp_constrs_partitionning
 end
 
-function _replace_vars_in_func(func::JuMP.AffExpr, original_to_subproblem_vars_mapping)
-    terms = [original_to_subproblem_vars_mapping[var] => coeff for (var, coeff) in func.terms]
+function _replace_vars_in_func(func::JuMP.AffExpr, target_model, original_to_subproblem_vars_mapping)
+    terms = [
+        original_to_subproblem_vars_mapping[var] => coeff 
+        for (var, coeff) in func.terms
+        if JuMP.owner_model(original_to_subproblem_vars_mapping[var]) == target_model
+    ]
     return AffExpr(func.constant, terms...)
 end
 
@@ -147,7 +178,6 @@ function _register_variables!(reform_model, original_to_reform_mapping, original
                 else
                     ""
                 end
-
                 original_var = object_dictionary(original_model)[var_name][index...]
                 original_to_reform_mapping[original_var] = JuMP.add_variable(reform_model, var, jump_var_name)
             end,
@@ -165,6 +195,7 @@ function _register_constraints!(reform_model, original_to_reform_constr_mapping,
                 original_constr_obj = JuMP.constraint_object(original_constr)
                 mapped_func = _replace_vars_in_func(
                     original_constr_obj.func,
+                    reform_model,
                     original_to_reform_vars_mapping
                 )
                 constr = JuMP.build_constraint(() -> error("todo."), mapped_func, original_constr_obj.set)
@@ -184,17 +215,27 @@ end
 function dantzig_wolfe_decomposition(model::Model, dw_annotation)
     # Parse variables and their annotations
     # TODO: master variables missing.
+    master_vars = _master_variables(model, dw_annotation)
     sp_vars_partitionning = _partition_subproblem_variables(model, dw_annotation)
 
     master_constrs = _master_constraints(model, dw_annotation)
     sp_constrs_paritionning = _partition_subproblem_constraints(model, dw_annotation)
 
 
-    # # Create master problem
-    # 
-
+    # Create master problem
     master_model = Model()
     JuMP.set_objective_sense(master_model, JuMP.objective_sense(model))
+
+    original_to_reform_vars_mapping = Dict()
+    original_to_reform_constrs_mapping = Dict()
+
+    master_var_infos = Dict(
+        var_name => Dict(
+            index => _original_var_info(model, var_name, index) for index in indexes
+        ) for (var_name, indexes) in master_vars
+    )
+    _register_variables!(master_model, original_to_reform_vars_mapping, model, master_vars)
+
 
     # # Add convexity constraints (initially empty)
     # convexity_constraints = Dict()
@@ -230,7 +271,6 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
         ) for (sp_id, var_by_names) in sp_vars_partitionning
     )
 
-    original_to_reform_vars_mapping = Dict()
     for (sp_id, var_infos_by_names) in subproblem_var_infos
         sp_model = subproblem_models[sp_id]
         _register_variables!(sp_model, original_to_reform_vars_mapping, model, var_infos_by_names)
@@ -239,7 +279,6 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
     @show sp_constrs_paritionning
     @show original_to_reform_vars_mapping
 
-    original_to_reform_constrs_mapping = Dict()
     # Create subproblem constraints
     for (sp_id, constr_by_names) in sp_constrs_paritionning
         sp_model = subproblem_models[sp_id]
@@ -248,19 +287,8 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
 
     @show original_to_reform_constrs_mapping
 
-    #     julia> obj = constraint_object(cstr[1])
-    # ScalarConstraint{AffExpr, MathOptInterface.LessThan{Float64}}(x[1] + x[2] + x[3] + x[4] + x[5] + x[6] + x[7] + x[8] + x[9] + x[10], MathOptInterface.LessThan{Float64}(1.0))
-
-    # julia> obj.
-    # func
-    # set
-    # julia> obj.func
-    # x[1] + x[2] + x[3] + x[4] + x[5] + x[6] + x[7] + x[8] + x[9] + x[10]
-
-    # julia> obj.set
-    # MathOptInterface.LessThan{Float64}(1.0)
-
-
+    # Create master constraints
+     _register_constraints!(master_model, original_to_reform_constrs_mapping, model, master_constrs, original_to_reform_vars_mapping)
 
 
 

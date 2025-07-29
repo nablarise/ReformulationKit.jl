@@ -77,9 +77,11 @@ function test_variable_assignment_ok()
     subproblems = RK.subproblems(reformulation)
 
     println(model)
-    
+    println("----")
+    println(RK.master(reformulation))
+    println("----")
     println(subproblems[1])
-
+    println("----")
     println(subproblems[2])
 
     subproblem_m1 = subproblems[1]
@@ -88,9 +90,6 @@ function test_variable_assignment_ok()
     @show x_m1[1,1]
     @show x_m1[1,2]
 
-    println(subproblems[1])
-
-    println(subproblems[2])
 end
 
 # # Constraint annotation tests
