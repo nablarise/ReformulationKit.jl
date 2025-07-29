@@ -150,19 +150,24 @@ end
 function test_register_objective_filters_variables_ok()
     original_model, machines, jobs = create_mixed_gap()
     master_model = Model()
-    subproblem_model = Model()
+    subproblem1_model = Model()
+    subproblem2_model = Model()
     
-    # Create variables in both models
+    # Create variables in all models
     @variable(master_model, z[jobs], Int)
-    @variable(subproblem_model, x[1:1, jobs], Bin)
-    @variable(subproblem_model, y[1:1, jobs] >= 0)
+    @variable(subproblem1_model, x[1:1, jobs], Bin)
+    @variable(subproblem1_model, y[1:1, jobs] >= 0)
+    @variable(subproblem2_model, x[2:2, jobs], Bin)
+    @variable(subproblem2_model, y[2:2, jobs] >= 0)
     
-    # Create variable mapping
+    # Create complete variable mapping for all variables
     var_mapping = Dict()
     for j in jobs
         var_mapping[original_model[:z][j]] = master_model[:z][j]
-        var_mapping[original_model[:x][1, j]] = subproblem_model[:x][1, j]
-        var_mapping[original_model[:y][1, j]] = subproblem_model[:y][1, j]
+        var_mapping[original_model[:x][1, j]] = subproblem1_model[:x][1, j]
+        var_mapping[original_model[:y][1, j]] = subproblem1_model[:y][1, j]
+        var_mapping[original_model[:x][2, j]] = subproblem2_model[:x][2, j]
+        var_mapping[original_model[:y][2, j]] = subproblem2_model[:y][2, j]
     end
     
     # Test master objective gets only master variables
