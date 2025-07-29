@@ -22,6 +22,8 @@
 
 using JuMP, ReformulationKit
 
+const RK = ReformulationKit
+
 # Problem dimensions and data
 machines = 1:2
 jobs = 1:3
@@ -71,24 +73,20 @@ nothing # hide
 # ## Decomposition
 
 # Perform the automatic decomposition:
-reformulation = dantzig_wolfe_decomposition(model, gap_annotation);
-
-println(master(reformulation))
-
-println(subproblems(reformulation)[1])
+reformulation = RK.dantzig_wolfe_decomposition(model, gap_annotation);
 
 # ## Results Analysis
 
 # **Master Problem** (coordinates job assignments):
-master_problem = master(reformulation)
-println(master_problem)
+master_form = RK.master(reformulation);
+println(master_form)
 
 # **Subproblems** (machine-specific decisions):
-subproblems_dict = subproblems(reformulation);
+subproblems_forms = RK.subproblems(reformulation);
 
 # Each subproblem handles one machine's assignment decisions within capacity
 for m in machines
-    sp = subproblems_dict[m]
+    sp = subproblems_forms[m]
     println("-- subproblem for machine $m --")
     println(sp)
 end
