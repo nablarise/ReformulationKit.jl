@@ -14,15 +14,15 @@ end
 dantzig_wolfe_subproblem(id) = SubproblemAnnotation(id)
 dantzig_wolfe_master() = MasterAnnotation()
 
-struct Reformulation
+struct DantzigWolfeReformulation
     master_problem::Model
     subproblems::Dict{Any,Model} # subproblem_id => JuMP model
     convexity_constraints_lb::Dict{Any,Any} # subproblem_id => JuMP constraint
     convexity_constraints_ub::Dict{Any,Any}
 end
 
-master(reformulation::Reformulation) = reformulation.master_problem
-subproblems(reformulation::Reformulation) = reformulation.subproblems
+master(reformulation::DantzigWolfeReformulation) = reformulation.master_problem
+subproblems(reformulation::DantzigWolfeReformulation) = reformulation.subproblems
 
 # Extract VariableInfo from original model variable for reformulation
 function _original_var_info(original_model, var_name, index)
@@ -225,25 +225,18 @@ function _populate_subproblem_mapping(master_model, original_constr_expr::AffExp
     for (original_var, value) in original_constr_expr.terms
         reform_var = original_to_reform_vars_mapping[original_var]
         if JuMP.owner_model(reform_var) != master_model
-            JuMP.owner_model(reform_var).ext[:dw_mapping][reform_var][reform_constr] = value
+            JuMP.owner_model(reform_var).ext[:dw_coupling_constr_mapping][reform_constr][reform_var] = value
         end
     end
 end
 
 function _subproblem_solution_to_master_constr_mapping!(subproblem_models, master_model, original_to_reform_vars_mapping, original_to_reform_constrs_mapping)
-    println("-------")
-    println("--------")
-    @show master
-    @show original_to_reform_vars_mapping
-    @show original_to_reform_constrs_mapping
-
     for (sp_id, subproblem_model) in subproblem_models
-        subproblem_model.ext[:dw_mapping] = Dict{Any, Dict{Any,Float64}}() # var_id => Dict(constr_id => coeff))
-    end
-
-    for reform_var in values(original_to_reform_vars_mapping)
-        if JuMP.owner_model(reform_var) != master_model
-            JuMP.owner_model(reform_var).ext[:dw_mapping][reform_var] = Dict()
+        subproblem_model.ext[:dw_coupling_constr_mapping] = Dict{Any, Dict{Any,Float64}}() # var_id => Dict(constr_id => coeff))
+        for reform_constr in values(original_to_reform_constrs_mapping)
+            if JuMP.owner_model(reform_constr) == master_model
+                subproblem_model.ext[:dw_coupling_constr_mapping][reform_constr] = Dict()
+            end
         end
     end
 
@@ -253,6 +246,42 @@ function _subproblem_solution_to_master_constr_mapping!(subproblem_models, maste
             _populate_subproblem_mapping(master_model, original_constr_object.func, reform_constr, original_to_reform_vars_mapping)
         end
     end
+end
+
+function _populate_cost_mapping(master_model, original_obj_expr::AffExpr, original_to_reform_vars_mapping)
+    for (original_var, cost) in original_obj_expr.terms
+        reform_var = original_to_reform_vars_mapping[original_var]
+        if JuMP.owner_model(reform_var) != master_model
+            JuMP.owner_model(reform_var).ext[:dw_sp_var_original_cost][reform_var] = cost
+        end
+    end
+end
+
+function _subproblem_solution_to_original_cost_mapping!(subproblem_models, master_model, original_model, original_to_reform_vars_mapping)
+    for (sp_id, subproblem_model) in subproblem_models
+        subproblem_model.ext[:dw_sp_var_original_cost] = Dict{Any, Float64}()
+    end
+    _populate_cost_mapping(master_model, JuMP.objective_function(original_model), original_to_reform_vars_mapping)
+end
+
+function _register_objective!(reform_model, model, original_to_reform_vars_mapping)
+    # Get original objective function and sense
+    original_obj_func = JuMP.objective_function(model)
+    original_obj_sense = JuMP.objective_sense(model)
+    
+    # Filter variables to keep only those belonging to reform_model
+    filtered_terms = [
+        original_to_reform_vars_mapping[var] => coeff 
+        for (var, coeff) in original_obj_func.terms
+        if JuMP.owner_model(original_to_reform_vars_mapping[var]) == reform_model
+    ]
+    
+    # Create new AffExpr with filtered terms and original constant
+    reform_obj_func = AffExpr(original_obj_func.constant, filtered_terms...)
+    
+    # Set objective on reform_model
+    JuMP.set_objective_sense(reform_model, original_obj_sense)
+    JuMP.set_objective_function(reform_model, reform_obj_func)
 end
 
 # Perform Dantzig-Wolfe decomposition of a JuMP model based on variable/constraint annotations
@@ -277,7 +306,7 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
             index => _original_var_info(model, var_name, index) for index in indexes
         ) for (var_name, indexes) in master_vars
     )
-    _register_variables!(master_model, original_to_reform_vars_mapping, model, master_vars)
+    _register_variables!(master_model, original_to_reform_vars_mapping, model, master_var_infos)
 
 
     # Create subproblems
@@ -307,6 +336,12 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
 
     # Create master constraints
     _register_constraints!(master_model, original_to_reform_constrs_mapping, model, master_constrs, original_to_reform_vars_mapping)
+    
+    # Create objectives
+    for (sp_id, sp_model) in subproblem_models
+        _register_objective!(sp_model, model, original_to_reform_vars_mapping)
+    end
+    _register_objective!(master_model, model, original_to_reform_vars_mapping)
 
     # Add convexity constraints (initially empty)
     convexity_constraints_lb = Dict()
@@ -320,7 +355,11 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
         subproblem_models, master_model, original_to_reform_vars_mapping, original_to_reform_constrs_mapping
     )
 
-    return Reformulation(master_model, subproblem_models, convexity_constraints_lb, convexity_constraints_ub)
+    _subproblem_solution_to_original_cost_mapping!(
+        subproblem_models, master_model, model, original_to_reform_vars_mapping
+    )
+
+    return DantzigWolfeReformulation(master_model, subproblem_models, convexity_constraints_lb, convexity_constraints_ub)
 end
 
 export dantzig_wolfe_decomposition, dantzig_wolfe_subproblem, dantzig_wolfe_master

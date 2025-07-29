@@ -84,7 +84,10 @@ function test_variable_assignment_ok()
     println("----")
     println(subproblems[2])
 
-    @show subproblems[1].ext[:dw_mapping]
+    println("----")
+    @show subproblems[1].ext[:dw_coupling_constr_mapping]
+    println("---")
+    @show subproblems[1].ext[:dw_sp_var_original_cost]
 
     subproblem_m1 = subproblems[1]
     x_m1 = subproblem_m1[:x]
