@@ -4,32 +4,73 @@
 \text{s.t.} \quad &amp; \sum_m x_{mj} + \text{penalty}_j \geq 1 \quad \forall j \quad \text{(assignment)} \\
 &amp; \sum_j w_{mj} x_{mj} \leq Q_m \quad \forall m \quad \text{(capacity)} \\
 &amp; x_{mj} \in \{0,1\}, \quad \text{penalty}_j \geq 0
-\end{align}\]</p><h2 id="Setup-and-Data"><a class="docs-heading-anchor" href="#Setup-and-Data">Setup and Data</a><a id="Setup-and-Data-1"></a><a class="docs-heading-anchor-permalink" href="#Setup-and-Data" title="Permalink"></a></h2><pre><code class="language- hljs">using JuMP, ReformulationKit
+\end{align}\]</p><h2 id="Setup-and-Data"><a class="docs-heading-anchor" href="#Setup-and-Data">Setup and Data</a><a id="Setup-and-Data-1"></a><a class="docs-heading-anchor-permalink" href="#Setup-and-Data" title="Permalink"></a></h2><pre><code class="language-julia hljs">using JuMP, ReformulationKit
 
-const RK = ReformulationKit</code></pre><p>Problem dimensions and data</p><pre><code class="language-julia hljs">machines = 1:2
+const RK = ReformulationKit</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">ReformulationKit</code></pre><p>Problem dimensions and data</p><pre><code class="language-julia hljs">machines = 1:2
 jobs = 1:3
 assignment_costs = [1 2 3; 4 5 6]  # Cost matrix: machines × jobs
 penalty_costs = [10, 12, 8]        # Penalty for unassigned jobs
 weights = [1 1 1; 1 1 1]           # Resource consumption (uniform)
-capacities = [2, 2]                # Machine capacities</code></pre><h2 id="JuMP-Model"><a class="docs-heading-anchor" href="#JuMP-Model">JuMP Model</a><a id="JuMP-Model-1"></a><a class="docs-heading-anchor-permalink" href="#JuMP-Model" title="Permalink"></a></h2><p>Create the complete GAP model:</p><pre><code class="language- hljs">model = Model()</code></pre><p>Variables</p><pre><code class="language- hljs">@variable(model, x[machines, jobs], Bin);    # Assignment variables
-@variable(model, penalty[jobs] &gt;= 0);        # Penalty variables
-nothing #hide</code></pre><p>Constraints</p><pre><code class="language- hljs">@constraint(model, assignment[j in jobs],
+capacities = [2, 2]                # Machine capacities</code></pre><h2 id="JuMP-Model"><a class="docs-heading-anchor" href="#JuMP-Model">JuMP Model</a><a id="JuMP-Model-1"></a><a class="docs-heading-anchor-permalink" href="#JuMP-Model" title="Permalink"></a></h2><p>Create the complete GAP model:</p><pre><code class="language-julia hljs">model = Model()</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">A JuMP Model
+├ solver: none
+├ objective_sense: FEASIBILITY_SENSE
+├ num_variables: 0
+├ num_constraints: 0
+└ Names registered in the model: none</code></pre><p>Variables</p><pre><code class="language-julia hljs">@variable(model, x[machines, jobs], Bin);    # Assignment variables
+@variable(model, penalty[jobs] &gt;= 0);        # Penalty variables</code></pre><p>Constraints</p><pre><code class="language-julia hljs">@constraint(model, assignment[j in jobs],
     sum(x[m, j] for m in machines) + penalty[j] &gt;= 1);  # Each job assigned or penalized
 
 @constraint(model, knapsack[m in machines],
-    sum(weights[m, j] * x[m, j] for j in jobs) &lt;= capacities[m]);  # Machine capacity
-nothing #hide</code></pre><p>Objective</p><pre><code class="language- hljs">@objective(model, Min,
+    sum(weights[m, j] * x[m, j] for j in jobs) &lt;= capacities[m]);  # Machine capacity</code></pre><p>Objective</p><pre><code class="language-julia hljs">@objective(model, Min,
     sum(assignment_costs[m, j] * x[m, j] for m in machines, j in jobs) +
     sum(penalty_costs[j] * penalty[j] for j in jobs));
 
-println(model)</code></pre><h2 id="Annotation-Function"><a class="docs-heading-anchor" href="#Annotation-Function">Annotation Function</a><a id="Annotation-Function-1"></a><a class="docs-heading-anchor-permalink" href="#Annotation-Function" title="Permalink"></a></h2><p>The annotation function determines decomposition structure. It receives as argument the name first and then the indices of the variable or the constraint. You must annotate all constraints and variables.</p><pre><code class="language-julia hljs">gap_annotation(::Val{:x}, machine, job) = dantzig_wolfe_subproblem(machine)
+println(model)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Min x[1,1] + 2 x[1,2] + 3 x[1,3] + 4 x[2,1] + 5 x[2,2] + 6 x[2,3] + 10 penalty[1] + 12 penalty[2] + 8 penalty[3]
+Subject to
+ assignment[1] : x[1,1] + x[2,1] + penalty[1] ≥ 1
+ assignment[2] : x[1,2] + x[2,2] + penalty[2] ≥ 1
+ assignment[3] : x[1,3] + x[2,3] + penalty[3] ≥ 1
+ knapsack[1] : x[1,1] + x[1,2] + x[1,3] ≤ 2
+ knapsack[2] : x[2,1] + x[2,2] + x[2,3] ≤ 2
+ penalty[1] ≥ 0
+ penalty[2] ≥ 0
+ penalty[3] ≥ 0
+ x[1,1] binary
+ x[2,1] binary
+ x[1,2] binary
+ x[2,2] binary
+ x[1,3] binary
+ x[2,3] binary</code></pre><h2 id="Annotation-Function"><a class="docs-heading-anchor" href="#Annotation-Function">Annotation Function</a><a id="Annotation-Function-1"></a><a class="docs-heading-anchor-permalink" href="#Annotation-Function" title="Permalink"></a></h2><p>The annotation function determines decomposition structure. It receives as argument the name first and then the indices of the variable or the constraint. You must annotate all constraints and variables.</p><pre><code class="language-julia hljs">gap_annotation(::Val{:x}, machine, job) = dantzig_wolfe_subproblem(machine)
 gap_annotation(::Val{:penalty}, job) = dantzig_wolfe_master()
 gap_annotation(::Val{:assignment}, job) = dantzig_wolfe_master()
-gap_annotation(::Val{:knapsack}, machine) = dantzig_wolfe_subproblem(machine)</code></pre><h2 id="Decomposition"><a class="docs-heading-anchor" href="#Decomposition">Decomposition</a><a id="Decomposition-1"></a><a class="docs-heading-anchor-permalink" href="#Decomposition" title="Permalink"></a></h2><p>Perform the automatic decomposition:</p><pre><code class="language- hljs">reformulation = RK.dantzig_wolfe_decomposition(model, gap_annotation);
-nothing #hide</code></pre><h2 id="Results-Analysis"><a class="docs-heading-anchor" href="#Results-Analysis">Results Analysis</a><a id="Results-Analysis-1"></a><a class="docs-heading-anchor-permalink" href="#Results-Analysis" title="Permalink"></a></h2><p><strong>Master Problem</strong> (coordinates job assignments):</p><pre><code class="language- hljs">master_form = RK.master(reformulation);
-println(master_form)</code></pre><p><strong>Subproblems</strong> (machine-specific decisions):</p><pre><code class="language- hljs">subproblems_forms = RK.subproblems(reformulation);
-nothing #hide</code></pre><p>Each subproblem handles one machine&#39;s assignment decisions within capacity</p><pre><code class="language- hljs">for m in machines
+gap_annotation(::Val{:knapsack}, machine) = dantzig_wolfe_subproblem(machine)</code></pre><h2 id="Decomposition"><a class="docs-heading-anchor" href="#Decomposition">Decomposition</a><a id="Decomposition-1"></a><a class="docs-heading-anchor-permalink" href="#Decomposition" title="Permalink"></a></h2><p>Perform the automatic decomposition:</p><pre><code class="language-julia hljs">reformulation = RK.dantzig_wolfe_decomposition(model, gap_annotation);</code></pre><h2 id="Results-Analysis"><a class="docs-heading-anchor" href="#Results-Analysis">Results Analysis</a><a id="Results-Analysis-1"></a><a class="docs-heading-anchor-permalink" href="#Results-Analysis" title="Permalink"></a></h2><p><strong>Master Problem</strong> (coordinates job assignments):</p><pre><code class="language-julia hljs">master_form = RK.master(reformulation);
+println(master_form)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Min 10 penalty[(1,)] + 12 penalty[(2,)] + 8 penalty[(3,)]
+Subject to
+ assignment[(2,)] : penalty[(2,)] ≥ 1
+ assignment[(3,)] : penalty[(3,)] ≥ 1
+ assignment[(1,)] : penalty[(1,)] ≥ 1
+ 0 ≥ 1
+ 0 ≥ 1
+ 0 ≤ 1
+ 0 ≤ 1
+ penalty[(2,)] ≥ 0
+ penalty[(3,)] ≥ 0
+ penalty[(1,)] ≥ 0</code></pre><p><strong>Subproblems</strong> (machine-specific decisions):</p><pre><code class="language-julia hljs">subproblems_forms = RK.subproblems(reformulation);</code></pre><p>Each subproblem handles one machine&#39;s assignment decisions within capacity</p><pre><code class="language-julia hljs">for m in machines
     sp = subproblems_forms[m]
     println(&quot;-- subproblem for machine $m --&quot;)
     println(sp)
-end</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../../installation/">« Installation</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Tuesday 29 July 2025 19:16">Tuesday 29 July 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-- subproblem for machine 1 --
+Min x[(1, 1)] + 2 x[(1, 2)] + 3 x[(1, 3)]
+Subject to
+ knapsack[(1,)] : x[(1, 2)] + x[(1, 1)] + x[(1, 3)] ≤ 2
+ x[(1, 2)] binary
+ x[(1, 1)] binary
+ x[(1, 3)] binary
+
+-- subproblem for machine 2 --
+Min 4 x[(2, 1)] + 5 x[(2, 2)] + 6 x[(2, 3)]
+Subject to
+ knapsack[(2,)] : x[(2, 2)] + x[(2, 1)] + x[(2, 3)] ≤ 2
+ x[(2, 2)] binary
+ x[(2, 1)] binary
+ x[(2, 3)] binary</code></pre><hr/><p><em>This page was generated using <a href="https://github.com/fredrikekre/Literate.jl">Literate.jl</a>.</em></p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../../installation/">« Installation</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Tuesday 29 July 2025 19:18">Tuesday 29 July 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
