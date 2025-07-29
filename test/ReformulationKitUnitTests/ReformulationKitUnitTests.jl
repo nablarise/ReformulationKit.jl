@@ -6,9 +6,9 @@ const RK = ReformulationKit
 const MOI = MathOptInterface
 
 # Annotation functions for testing
-dw_annotation(::Val{:x}, machine, job) = RK.dantzig_wolfe_subproblem(machine)
-dw_annotation(::Val{:cov}, job) = RK.dantzig_wolfe_master()
-dw_annotation(::Val{:knp}, machine) = RK.dantzig_wolfe_subproblem(machine)
+dw_annotation(::Val{:x}, machine, job) = RK.dantzig_wolfe_subproblem(machine);
+dw_annotation(::Val{:cov}, job) = RK.dantzig_wolfe_master();
+dw_annotation(::Val{:knp}, machine) = RK.dantzig_wolfe_subproblem(machine);
 
 # Helper functions for test data creation
 function create_simple_problem()
@@ -65,13 +65,13 @@ end
 
 # Variable annotation tests
 function test_variable_assignment_ok()
-    J = 1:2
-    M = 1:2
-    model = Model()
-    @variable(model, x[M, J], Bin)
-    @constraint(model, cov[j in J], sum(x[m, j] for m in M) >= 1)
-    @constraint(model, knp[m in M], sum(x[m, j] for j in J) <= 2)
-    @objective(model, Min, sum(x[m, j] for m in M, j in J))
+    J = 1:2;
+    M = 1:2;
+    model = Model();
+    @variable(model, x[M, J], Bin);
+    @constraint(model, cov[j in J], sum(x[m, j] for m in M) >= 1);
+    @constraint(model, knp[m in M], sum(x[m, j] for j in J) <= 2);
+    @objective(model, Min, sum(x[m, j] for m in M, j in J));
 
     reformulation = RK.dantzig_wolfe_decomposition(model, dw_annotation)
     subproblems = RK.subproblems(reformulation)

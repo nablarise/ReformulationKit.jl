@@ -14,277 +14,82 @@ end
 dantzig_wolfe_subproblem(id) = SubproblemAnnotation(id)
 dantzig_wolfe_master() = MasterAnnotation()
 
-struct DantzigWolfeReformulation
-    master_problem::Model
-    subproblems::Dict{Any,Model} # subproblem_id => JuMP model
-    convexity_constraints_lb::Dict{Any,Any} # subproblem_id => JuMP constraint
-    convexity_constraints_ub::Dict{Any,Any}
-end
+include("dantzig_wolfe/reformulation.jl")
+include("dantzig_wolfe/partitionning.jl")
+include("dantzig_wolfe/models.jl")
 
-master(reformulation::DantzigWolfeReformulation) = reformulation.master_problem
-subproblems(reformulation::DantzigWolfeReformulation) = reformulation.subproblems
 
-# Extract VariableInfo from original model variable for reformulation
-function _original_var_info(original_model, var_name, index)
-    original_var = object_dictionary(original_model)[var_name][index...]
-    has_upper_bound = JuMP.has_upper_bound(original_var)
-    has_lower_bound = JuMP.has_lower_bound(original_var)
-    is_fixed = JuMP.is_fixed(original_var)
-    return JuMP.VariableInfo(
-        has_lower_bound,
-        has_lower_bound ? JuMP.lower_bound(original_var) : -Inf,
-        has_upper_bound,
-        has_upper_bound ? JuMP.upper_bound(original_var) : Inf,
-        JuMP.is_fixed(original_var),
-        is_fixed ? JuMP.fix_value(original_var) : nothing,
-        JuMP.has_start_value(original_var),
-        JuMP.start_value(original_var),
-        JuMP.is_binary(original_var),
-        JuMP.is_integer(original_var),
-    )
-end
+"""
+    dantzig_wolfe_decomposition(model::Model, dw_annotation) -> DantzigWolfeReformulation
 
-# Partition variables annotated for master problem by variable name and index
-function _master_variables(model, dw_annotation)
-    master_vars = Dict{Symbol,Set{Tuple}}()
+Perform Dantzig-Wolfe decomposition of a JuMP optimization model based on user-provided 
+variable and constraint annotations.
 
-    for (var_name, var_obj) in object_dictionary(model)
-        # Only process variables, not constraints
-        if var_obj isa AbstractArray && length(var_obj) > 0 && first(var_obj) isa AbstractVariableRef
-            for idx in _eachindex(var_obj)
-                annotation = dw_annotation(Val(var_name), Tuple(idx)...)
-                if annotation isa MasterAnnotation
-                    if !haskey(master_vars[annotation.id], var_name)
-                        master_vars[annotation.id][var_name] = Set{Tuple}()
-                    end
-                    push!(master_vars[annotation.id][var_name], Tuple(idx))
-                end
-            end
-        elseif var_obj isa AbstractVariableRef
-            annotation = dw_annotation(Val(var_name))
-            if annotation isa MasterAnnotation
-                if !haskey(master_vars[annotation.id], var_name)
-                    master_vars[annotation.id][var_name] = Set{Tuple{}}(())
-                end
-            end
-        end
-    end
-    return master_vars
-end
+# Arguments
+- `model::Model`: The original JuMP model to decompose
+- `dw_annotation`: Annotation function that determines the assignment of variables and 
+  constraints to master problem or subproblems. Should return either:
+  - `dantzig_wolfe_master()` for master problem assignment
+  - `dantzig_wolfe_subproblem(id)` for subproblem assignment with given ID
 
-# Partition variables by subproblem ID based on annotations
-function _partition_subproblem_variables(model, dw_annotation)
-    sp_vars_partitionning = Dict{Any,Dict{Symbol,Set{Tuple}}}()
-    for (var_name, var_obj) in object_dictionary(model)
-        # Only process variables, not constraints
-        if var_obj isa AbstractArray && length(var_obj) > 0 && first(var_obj) isa AbstractVariableRef
-            for idx in _eachindex(var_obj)
-                annotation = dw_annotation(Val(var_name), Tuple(idx)...)
-                if annotation isa SubproblemAnnotation
-                    if !haskey(sp_vars_partitionning, annotation.id)
-                        sp_vars_partitionning[annotation.id] = Dict{Symbol,Set{Tuple}}()
-                    end
-                    if !haskey(sp_vars_partitionning[annotation.id], var_name)
-                        sp_vars_partitionning[annotation.id][var_name] = Set{Tuple}()
-                    end
-                    push!(sp_vars_partitionning[annotation.id][var_name], Tuple(idx))
-                end
-            end
-        elseif var_obj isa AbstractVariableRef
-            annotation = dw_annotation(Val(var_name))
-            if annotation isa SubproblemAnnotation
-                if !haskey(sp_vars_partitionning, annotation.id)
-                    sp_vars_partitionning[annotation.id] = Dict{Symbol,Set{Tuple}}()
-                end
-                if !haskey(sp_vars_partitionning[annotation.id], var_name)
-                    sp_vars_partitionning[annotation.id][var_name] = Set{Tuple{}}(())
-                end
-            end
-        end
-    end
-    return sp_vars_partitionning
-end
+# Annotation Function Pattern
+The annotation function should follow this pattern:
+```julia
+dw_annotation(::Val{:variable_name}, indices...) -> SubproblemAnnotation | MasterAnnotation
+dw_annotation(::Val{:constraint_name}, indices...) -> SubproblemAnnotation | MasterAnnotation
+```
 
-# Partition constraints annotated for master problem by constraint name and index
-function _master_constraints(model, dw_annotation)
-    master_constrs = Dict{Symbol,Set{Tuple}}()
+# Returns
+A `DantzigWolfeReformulation` containing:
+- `master_problem::Model`: The master problem with coupling constraints and convexity constraints
+- `subproblems::Dict{Any,Model}`: Dictionary mapping subproblem IDs to their JuMP models
+- `convexity_constraints_lb::Dict{Any,Any}`: Lower bound convexity constraints for each subproblem
+- `convexity_constraints_ub::Dict{Any,Any}`: Upper bound convexity constraints for each subproblem
 
-    for (constr_name, constr_obj) in object_dictionary(model)
-        # Only process constraints, not variables
-        if constr_obj isa AbstractArray && length(constr_obj) > 0 && first(constr_obj) isa ConstraintRef
-            for idx in _eachindex(constr_obj)
-                annotation = dw_annotation(Val(constr_name), Tuple(idx)...)
-                if annotation isa MasterAnnotation
-                    if !haskey(master_constrs, constr_name)
-                        master_constrs[constr_name] = Set{Tuple}()
-                    end
-                    push!(master_constrs[constr_name], Tuple(idx))
-                end
-            end
-        elseif constr_obj isa ConstraintRef
-            annotation = dw_annotation(Val(constr_name))
-            if annotation isa MasterAnnotation
-                if !haskey(master_constrs, constr_name)
-                    master_constrs[constr_name] = Set{Tuple}(())
-                end
-            end
-        end
-    end
-    return master_constrs
-end
+# Process Overview
+1. **Variable Partitioning**: Variables are partitioned between master and subproblems based on annotations
+2. **Constraint Partitioning**: Constraints are assigned to master (coupling) or subproblems based on annotations
+3. **Model Creation**: Separate JuMP models are created for master and each subproblem
+4. **Variable Registration**: Variables are recreated in their assigned models with original properties
+5. **Constraint Registration**: Constraints are recreated using mapped variables
+6. **Objective Decomposition**: Original objective is split so each model gets terms for its variables only
+7. **Convexity Constraints**: Empty convexity constraints are added to master for each subproblem
+8. **Mapping Setup**: Internal mappings are created for column generation support
 
-# Partition constraints by subproblem ID based on annotations
-function _partition_subproblem_constraints(model, dw_annotation)
-    sp_constrs_partitionning = Dict{Any,Dict{Symbol,Set{Tuple}}}()
-    for (constr_name, constr_obj) in object_dictionary(model)
-        # Only process constraints, not variables
-        if constr_obj isa AbstractArray && length(constr_obj) > 0 && first(constr_obj) isa ConstraintRef
-            for idx in _eachindex(constr_obj)
-                annotation = dw_annotation(Val(constr_name), Tuple(idx)...)
-                if annotation isa SubproblemAnnotation
-                    if !haskey(sp_constrs_partitionning, annotation.id)
-                        sp_constrs_partitionning[annotation.id] = Dict{Symbol,Set{Tuple}}()
-                    end
-                    if !haskey(sp_constrs_partitionning[annotation.id], constr_name)
-                        sp_constrs_partitionning[annotation.id][constr_name] = Set{Tuple}()
-                    end
-                    push!(sp_constrs_partitionning[annotation.id][constr_name], Tuple(idx))
-                end
-            end
-        elseif constr_obj isa ConstraintRef
-            annotation = dw_annotation(Val(constr_name))
-            if annotation isa SubproblemAnnotation
-                if !haskey(sp_constrs_partitionning, annotation.id)
-                    sp_constrs_partitionning[annotation.id] = Dict{Symbol,Set{Tuple}}()
-                end
-                if !haskey(sp_constrs_partitionning[annotation.id], constr_name)
-                    sp_constrs_partitionning[annotation.id][constr_name] = Set{Tuple}()
-                end
-            end
-        end
-    end
-    return sp_constrs_partitionning
-end
+# Subproblem Extensions
+Each subproblem model gets the following extensions in `model.ext`:
+- `:dw_coupling_constr_mapping`: Maps master constraints to subproblem variable coefficients
+- `:dw_sp_var_original_cost`: Maps subproblem variables to their original objective coefficients
 
-function _replace_vars_in_func(func::JuMP.AffExpr, target_model, original_to_subproblem_vars_mapping)
-    terms = [
-        original_to_subproblem_vars_mapping[var] => coeff 
-        for (var, coeff) in func.terms
-        if JuMP.owner_model(original_to_subproblem_vars_mapping[var]) == target_model
-    ]
-    return AffExpr(func.constant, terms...)
-end
+# Example
+```julia
+# Define annotation function
+dw_annotation(::Val{:x}, machine, job) = dantzig_wolfe_subproblem(machine)
+dw_annotation(::Val{:demand}, job) = dantzig_wolfe_master()
+dw_annotation(::Val{:capacity}, machine) = dantzig_wolfe_subproblem(machine)
 
-# Create and register variables in reform model, updating variable mapping
-function _register_variables!(reform_model, original_to_reform_mapping, original_model, var_infos_by_names)
-    for (var_name, var_infos_by_indexes) in var_infos_by_names
-        vars = Containers.container(
-            (index...) -> begin
-                var = JuMP.build_variable(() -> error("todo."), var_infos_by_indexes[index])
-                jump_var_name = if JuMP.set_string_names_on_creation(reform_model)
-                    JuMP.string(var_name, "[", JuMP.string(index), "]")
-                else
-                    ""
-                end
-                original_var = object_dictionary(original_model)[var_name][index...]
-                original_to_reform_mapping[original_var] = JuMP.add_variable(reform_model, var, jump_var_name)
-            end,
-            collect(keys(var_infos_by_indexes))
-        )
-        reform_model[var_name] = vars
-    end
-end
+# Create original model
+model = Model()
+@variable(model, x[1:2, 1:3], Bin)
+@constraint(model, demand[j in 1:3], sum(x[m,j] for m in 1:2) >= 1)
+@constraint(model, capacity[m in 1:2], sum(x[m,j] for j in 1:3) <= 2)
+@objective(model, Min, sum(x[m,j] for m in 1:2, j in 1:3))
 
-# Create and register constraints in reform model using mapped variables
-function _register_constraints!(reform_model, original_to_reform_constr_mapping, original_model, constr_by_names, original_to_reform_vars_mapping)
-    for (constr_name, constr_by_indexes) in constr_by_names
-        constrs = JuMP.Containers.container(
-            (index...) -> begin
-                original_constr = object_dictionary(original_model)[constr_name][index...]
-                original_constr_obj = JuMP.constraint_object(original_constr)
-                mapped_func = _replace_vars_in_func(
-                    original_constr_obj.func,
-                    reform_model,
-                    original_to_reform_vars_mapping
-                )
-                constr = JuMP.build_constraint(() -> error("todo."), mapped_func, original_constr_obj.set)
-                jump_constr_name = if JuMP.set_string_names_on_creation(reform_model)
-                    JuMP.string(constr_name, "[", JuMP.string(index), "]")
-                else
-                    ""
-                end
-                original_to_reform_constr_mapping[original_constr] = JuMP.add_constraint(reform_model, constr, jump_constr_name)
-            end,
-            collect(constr_by_indexes)
-        )
-        reform_model[constr_name] = constrs
-    end
-end
+# Perform decomposition
+reformulation = dantzig_wolfe_decomposition(model, dw_annotation)
 
-function _populate_subproblem_mapping(master_model, original_constr_expr::AffExpr, reform_constr, original_to_reform_vars_mapping )
-    for (original_var, value) in original_constr_expr.terms
-        reform_var = original_to_reform_vars_mapping[original_var]
-        if JuMP.owner_model(reform_var) != master_model
-            JuMP.owner_model(reform_var).ext[:dw_coupling_constr_mapping][reform_constr][reform_var] = value
-        end
-    end
-end
+# Access results
+master = master(reformulation)
+subproblems = subproblems(reformulation)
+```
 
-function _subproblem_solution_to_master_constr_mapping!(subproblem_models, master_model, original_to_reform_vars_mapping, original_to_reform_constrs_mapping)
-    for (sp_id, subproblem_model) in subproblem_models
-        subproblem_model.ext[:dw_coupling_constr_mapping] = Dict{Any, Dict{Any,Float64}}() # var_id => Dict(constr_id => coeff))
-        for reform_constr in values(original_to_reform_constrs_mapping)
-            if JuMP.owner_model(reform_constr) == master_model
-                subproblem_model.ext[:dw_coupling_constr_mapping][reform_constr] = Dict()
-            end
-        end
-    end
-
-    for (original_constr, reform_constr) in original_to_reform_constrs_mapping
-        if JuMP.owner_model(reform_constr) == master_model
-            original_constr_object = JuMP.constraint_object(original_constr)
-            _populate_subproblem_mapping(master_model, original_constr_object.func, reform_constr, original_to_reform_vars_mapping)
-        end
-    end
-end
-
-function _populate_cost_mapping(master_model, original_obj_expr::AffExpr, original_to_reform_vars_mapping)
-    for (original_var, cost) in original_obj_expr.terms
-        reform_var = original_to_reform_vars_mapping[original_var]
-        if JuMP.owner_model(reform_var) != master_model
-            JuMP.owner_model(reform_var).ext[:dw_sp_var_original_cost][reform_var] = cost
-        end
-    end
-end
-
-function _subproblem_solution_to_original_cost_mapping!(subproblem_models, master_model, original_model, original_to_reform_vars_mapping)
-    for (sp_id, subproblem_model) in subproblem_models
-        subproblem_model.ext[:dw_sp_var_original_cost] = Dict{Any, Float64}()
-    end
-    _populate_cost_mapping(master_model, JuMP.objective_function(original_model), original_to_reform_vars_mapping)
-end
-
-function _register_objective!(reform_model, model, original_to_reform_vars_mapping)
-    # Get original objective function and sense
-    original_obj_func = JuMP.objective_function(model)
-    original_obj_sense = JuMP.objective_sense(model)
-    
-    # Filter variables to keep only those belonging to reform_model
-    filtered_terms = [
-        original_to_reform_vars_mapping[var] => coeff 
-        for (var, coeff) in original_obj_func.terms
-        if JuMP.owner_model(original_to_reform_vars_mapping[var]) == reform_model
-    ]
-    
-    # Create new AffExpr with filtered terms and original constant
-    reform_obj_func = AffExpr(original_obj_func.constant, filtered_terms...)
-    
-    # Set objective on reform_model
-    JuMP.set_objective_sense(reform_model, original_obj_sense)
-    JuMP.set_objective_function(reform_model, reform_obj_func)
-end
-
-# Perform Dantzig-Wolfe decomposition of a JuMP model based on variable/constraint annotations
+# Notes
+- Variables and constraints not annotated will cause errors
+- Each subproblem must have at least one variable
+- Master problem contains coupling constraints that involve multiple subproblems
+- Convexity constraints are initially infeasible and need to be populated during column generation
+- The decomposition preserves all variable properties (bounds, types, etc.)
+"""
 function dantzig_wolfe_decomposition(model::Model, dw_annotation)
     # Parse variables and their annotations
     # TODO: master variables missing.
@@ -312,7 +117,6 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
     # Create subproblems
     subproblem_ids = keys(sp_vars_partitionning)
     subproblem_models = Dict(sp_id... => Model() for sp_id in subproblem_ids)
-    coefficient_mappings = Dict(sp_id => Dict() for sp_id in subproblem_ids)
 
     # Create subroblem variables
     subproblem_var_infos = Dict(
