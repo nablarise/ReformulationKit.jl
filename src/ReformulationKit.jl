@@ -16,12 +16,15 @@ dantzig_wolfe_master() = MasterAnnotation()
 
 struct Reformulation
     master_problem::Model
-    subproblems::Dict{Any,Model}
+    subproblems::Dict{Any,Model} # subproblem_id => JuMP model
+    convexity_constraints_lb::Dict{Any,Any} # subproblem_id => JuMP constraint
+    convexity_constraints_ub::Dict{Any,Any}
 end
 
 master(reformulation::Reformulation) = reformulation.master_problem
 subproblems(reformulation::Reformulation) = reformulation.subproblems
 
+# Extract VariableInfo from original model variable for reformulation
 function _original_var_info(original_model, var_name, index)
     original_var = object_dictionary(original_model)[var_name][index...]
     has_upper_bound = JuMP.has_upper_bound(original_var)
@@ -41,6 +44,7 @@ function _original_var_info(original_model, var_name, index)
     )
 end
 
+# Partition variables annotated for master problem by variable name and index
 function _master_variables(model, dw_annotation)
     master_vars = Dict{Symbol,Set{Tuple}}()
 
@@ -68,6 +72,7 @@ function _master_variables(model, dw_annotation)
     return master_vars
 end
 
+# Partition variables by subproblem ID based on annotations
 function _partition_subproblem_variables(model, dw_annotation)
     sp_vars_partitionning = Dict{Any,Dict{Symbol,Set{Tuple}}}()
     for (var_name, var_obj) in object_dictionary(model)
@@ -100,6 +105,7 @@ function _partition_subproblem_variables(model, dw_annotation)
     return sp_vars_partitionning
 end
 
+# Partition constraints annotated for master problem by constraint name and index
 function _master_constraints(model, dw_annotation)
     master_constrs = Dict{Symbol,Set{Tuple}}()
 
@@ -127,6 +133,7 @@ function _master_constraints(model, dw_annotation)
     return master_constrs
 end
 
+# Partition constraints by subproblem ID based on annotations
 function _partition_subproblem_constraints(model, dw_annotation)
     sp_constrs_partitionning = Dict{Any,Dict{Symbol,Set{Tuple}}}()
     for (constr_name, constr_obj) in object_dictionary(model)
@@ -168,6 +175,7 @@ function _replace_vars_in_func(func::JuMP.AffExpr, target_model, original_to_sub
     return AffExpr(func.constant, terms...)
 end
 
+# Create and register variables in reform model, updating variable mapping
 function _register_variables!(reform_model, original_to_reform_mapping, original_model, var_infos_by_names)
     for (var_name, var_infos_by_indexes) in var_infos_by_names
         vars = Containers.container(
@@ -187,6 +195,7 @@ function _register_variables!(reform_model, original_to_reform_mapping, original
     end
 end
 
+# Create and register constraints in reform model using mapped variables
 function _register_constraints!(reform_model, original_to_reform_constr_mapping, original_model, constr_by_names, original_to_reform_vars_mapping)
     for (constr_name, constr_by_indexes) in constr_by_names
         constrs = JuMP.Containers.container(
@@ -212,6 +221,41 @@ function _register_constraints!(reform_model, original_to_reform_constr_mapping,
     end
 end
 
+function _populate_subproblem_mapping(master_model, original_constr_expr::AffExpr, reform_constr, original_to_reform_vars_mapping )
+    for (original_var, value) in original_constr_expr.terms
+        reform_var = original_to_reform_vars_mapping[original_var]
+        if JuMP.owner_model(reform_var) != master_model
+            JuMP.owner_model(reform_var).ext[:dw_mapping][reform_var][reform_constr] = value
+        end
+    end
+end
+
+function _subproblem_solution_to_master_constr_mapping!(subproblem_models, master_model, original_to_reform_vars_mapping, original_to_reform_constrs_mapping)
+    println("-------")
+    println("--------")
+    @show master
+    @show original_to_reform_vars_mapping
+    @show original_to_reform_constrs_mapping
+
+    for (sp_id, subproblem_model) in subproblem_models
+        subproblem_model.ext[:dw_mapping] = Dict{Any, Dict{Any,Float64}}() # var_id => Dict(constr_id => coeff))
+    end
+
+    for reform_var in values(original_to_reform_vars_mapping)
+        if JuMP.owner_model(reform_var) != master_model
+            JuMP.owner_model(reform_var).ext[:dw_mapping][reform_var] = Dict()
+        end
+    end
+
+    for (original_constr, reform_constr) in original_to_reform_constrs_mapping
+        if JuMP.owner_model(reform_constr) == master_model
+            original_constr_object = JuMP.constraint_object(original_constr)
+            _populate_subproblem_mapping(master_model, original_constr_object.func, reform_constr, original_to_reform_vars_mapping)
+        end
+    end
+end
+
+# Perform Dantzig-Wolfe decomposition of a JuMP model based on variable/constraint annotations
 function dantzig_wolfe_decomposition(model::Model, dw_annotation)
     # Parse variables and their annotations
     # TODO: master variables missing.
@@ -220,7 +264,6 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
 
     master_constrs = _master_constraints(model, dw_annotation)
     sp_constrs_paritionning = _partition_subproblem_constraints(model, dw_annotation)
-
 
     # Create master problem
     master_model = Model()
@@ -236,26 +279,6 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
     )
     _register_variables!(master_model, original_to_reform_vars_mapping, model, master_vars)
 
-
-    # # Add convexity constraints (initially empty)
-    # convexity_constraints = Dict()
-    # for sp_id in subproblem_ids
-    #     convexity_constraints[sp_id] = @constraint(master_model, 0 == 1)
-    # end
-
-    # # Add coupling constraints to master (initially empty, will be populated during column generation)
-    # coupling_constraints = Dict()
-    # for ((constr_name, idx), annotation) in constraint_to_destination
-    #     if annotation isa MasterAnnotation
-    #         # Get original constraint structure
-    #         original_constr_ref = object_dictionary(model)[constr_name][idx...]
-    #         original_constr = constraint_object(original_constr_ref)
-
-    #         # Create empty constraint with same set but no variables initially
-    #         empty_expr = AffExpr(0.0)
-    #         coupling_constraints[(constr_name, idx)] = @constraint(master_model, empty_expr in original_constr.set)
-    #     end
-    # end
 
     # Create subproblems
     subproblem_ids = keys(sp_vars_partitionning)
@@ -276,139 +299,28 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
         _register_variables!(sp_model, original_to_reform_vars_mapping, model, var_infos_by_names)
     end
 
-    @show sp_constrs_paritionning
-    @show original_to_reform_vars_mapping
-
     # Create subproblem constraints
     for (sp_id, constr_by_names) in sp_constrs_paritionning
         sp_model = subproblem_models[sp_id]
         _register_constraints!(sp_model, original_to_reform_constrs_mapping, model, constr_by_names, original_to_reform_vars_mapping)
     end
 
-    @show original_to_reform_constrs_mapping
-
     # Create master constraints
-     _register_constraints!(master_model, original_to_reform_constrs_mapping, model, master_constrs, original_to_reform_vars_mapping)
+    _register_constraints!(master_model, original_to_reform_constrs_mapping, model, master_constrs, original_to_reform_vars_mapping)
 
+    # Add convexity constraints (initially empty)
+    convexity_constraints_lb = Dict()
+    convexity_constraints_ub = Dict()
+    for sp_id in subproblem_ids
+        convexity_constraints_lb[sp_id] = @constraint(master_model, 0 >= 1)
+        convexity_constraints_ub[sp_id] = @constraint(master_model, 0 <= 1)
+    end
 
+    _subproblem_solution_to_master_constr_mapping!(
+        subproblem_models, master_model, original_to_reform_vars_mapping, original_to_reform_constrs_mapping
+    )
 
-
-    # for sp_id in keys(subproblem_var_infos)
-    #     sp_model = Model()
-    #     subproblem_models[sp_id] = sp_model
-    #     coefficient_mappings[sp_id] = Dict()
-
-    #     # Add variables to subproblem with proper names
-    #     sp_variables = Dict()
-    #     sp_var_infos = Dict()
-
-    #     for ((var_name, idx), assigned_sp_id) in var_to_subproblem
-    #         if assigned_sp_id == sp_id
-    #             original_var = object_dictionary(model)[var_name][idx...]
-
-
-    #             JuMP.VariableInfo(
-    #                 JuMP.has_lower_bound(original_var),
-    #                 JuMP.lower_bound(original_var),
-    #                 JuMP.has_upper_bound(original_var),
-    #                 JuMP.upper_bound(original_var),
-    #                 JuMP.is_fixed(original_var),
-    #                 JuMP.fix_value(original_var),
-    #                 JuMP.has_start_value(original_var),
-    #                 JuMP.start_value(original_var),
-    #                 JuMP.is_binary(original_var),
-    #                 JuMP.is_integer(original_var),
-    #             )
-
-    #             # Create variable with same properties and name
-    #             if is_binary(original_var)
-    #                 sp_var = @variable(sp_model, binary = true, base_name = string(var_name, idx))
-    #             elseif is_integer(original_var)
-    #                 sp_var = @variable(sp_model, integer = true, base_name = string(var_name, idx))
-    #             else
-    #                 sp_var = @variable(sp_model, base_name = string(var_name, idx))
-    #             end
-
-    #             # Set bounds if they exist
-    #             if has_lower_bound(original_var)
-    #                 set_lower_bound(sp_var, lower_bound(original_var))
-    #             end
-    #             if has_upper_bound(original_var)
-    #                 set_upper_bound(sp_var, upper_bound(original_var))
-    #             end
-
-    #             sp_variables[(var_name, idx)] = sp_var
-    #         end
-    #     end
-
-    #     #Containers.container((i,j) -> i+j, I)
-
-    #     # Add subproblem constraints
-    #     for ((constr_name, idx), annotation) in constraint_to_destination
-    #         if annotation isa SubproblemAnnotation && annotation.id == sp_id
-    #             # Get original constraint and recreate it with subproblem variables
-    #             original_constr_ref = object_dictionary(model)[constr_name][idx...]
-    #             original_constr = constraint_object(original_constr_ref)
-
-    #             # Build constraint expression with subproblem variables
-    #             constraint_expr = AffExpr(0.0)
-    #             for (var_ref, coeff) in linear_terms(original_constr.func)
-    #                 # Find the variable in our subproblem
-    #                 var_found = false
-    #                 for ((var_name, var_idx), sp_var) in sp_variables
-    #                     if object_dictionary(model)[var_name][var_idx...] == var_ref
-    #                         add_to_expression!(constraint_expr, coeff, sp_var)
-    #                         var_found = true
-    #                         break
-    #                     end
-    #                 end
-    #                 if !var_found
-    #                     # Variable not in this subproblem - skip it (it belongs to another subproblem)
-    #                     # This can happen for coupling constraints that involve multiple subproblems
-    #                     continue
-    #                 end
-    #             end
-
-    #             # Add constant if exists
-    #             if isa(original_constr.func, AffExpr)
-    #                 constraint_expr.constant += original_constr.func.constant
-    #             end
-
-    #             # Create the constraint with the same set
-    #             @constraint(sp_model, constraint_expr in original_constr.set)
-    #         end
-    #     end
-
-    #     # Add objective function (subproblem gets portion of original objective)
-    #     original_obj = objective_function(model)
-    #     if isa(original_obj, AffExpr) || isa(original_obj, QuadExpr)
-    #         subproblem_obj = AffExpr(0.0)
-    #         for (var_ref, coeff) in linear_terms(original_obj)
-    #             # Check if this variable belongs to this subproblem
-    #             for ((var_name, var_idx), sp_var) in sp_variables
-    #                 if object_dictionary(model)[var_name][var_idx...] == var_ref
-    #                     add_to_expression!(subproblem_obj, coeff, sp_var)
-    #                     break
-    #                 end
-    #             end
-    #         end
-
-    #         # Add constant if this is the first subproblem (to avoid double counting)
-    #         if sp_id == first(sort(collect(subproblem_ids))) && isa(original_obj, AffExpr)
-    #             subproblem_obj.constant += original_obj.constant
-    #         end
-
-    #         @objective(sp_model, objective_sense(model), subproblem_obj)
-    #     end
-
-    #     # Store coefficient mapping for convexity constraint
-    #     coefficient_mappings[sp_id][:convexity] = 1.0
-    # end
-
-    # Convert to vector format
-    #subproblems_vector = [subproblem_models[sp_id] for sp_id in sort(collect(subproblem_ids))]
-
-    return Reformulation(master_model, subproblem_models)
+    return Reformulation(master_model, subproblem_models, convexity_constraints_lb, convexity_constraints_ub)
 end
 
 export dantzig_wolfe_decomposition, dantzig_wolfe_subproblem, dantzig_wolfe_master

@@ -84,6 +84,8 @@ function test_variable_assignment_ok()
     println("----")
     println(subproblems[2])
 
+    @show subproblems[1].ext[:dw_mapping]
+
     subproblem_m1 = subproblems[1]
     x_m1 = subproblem_m1[:x]
     @show x_m1
