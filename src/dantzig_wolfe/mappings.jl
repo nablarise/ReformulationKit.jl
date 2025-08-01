@@ -5,45 +5,31 @@
 """
 CouplingConstraintMapping
 
-Stores the mapping between master constraints and subproblem variables with their coefficients.
-Uses type-stable storage with constraint types separated for performance.
+Stores the mapping from subproblem variables to their coefficients in master constraints.
+Uses direct type-stable storage optimized for reduced cost computation and column addition.
 
 Structure:
-- First level: Type{<:MOI.ConstraintIndex} (constraint type)
-- Second level: Int64 (constraint index value) 
-- Third level: MOI.VariableIndex => Float64 (variable to coefficient mapping)
+- MOI.VariableIndex => [(constraint_type, constraint_value, coefficient), ...]
+
+This enables efficient access patterns:
+- Reduced cost computation: iterate over all constraint coefficients for a variable
+- Column addition: add variable to all relevant master constraints
 """
 struct CouplingConstraintMapping
-    data::Dict{Type{<:MOI.ConstraintIndex}, Dict{Int64, Dict{MOI.VariableIndex, Float64}}}
+    # Using DataType because typeof(constraint_index) returns DataType, not Type{<:MOI.ConstraintIndex}
+    data::Dict{MOI.VariableIndex, Vector{Tuple{DataType, Int64, Float64}}}
 end
 
 function CouplingConstraintMapping()
-    return CouplingConstraintMapping(Dict{Type{<:MOI.ConstraintIndex}, Dict{Int64, Dict{MOI.VariableIndex, Float64}}}())
+    return CouplingConstraintMapping(Dict{MOI.VariableIndex, Vector{Tuple{DataType, Int64, Float64}}}())
 end
 
-"""
-    get_coefficient(mapping::CouplingConstraintMapping, constraint_ref, variable_ref)
-
-Get the coefficient of a variable in a constraint.
-"""
-function get_coefficient(mapping::CouplingConstraintMapping, constraint_ref, variable_ref)
-    constraint_index = JuMP.index(constraint_ref)
-    variable_index = JuMP.index(variable_ref)
-    constraint_type = typeof(constraint_index)
-    constraint_value = constraint_index.value
-    
-    if haskey(mapping.data, constraint_type) && 
-       haskey(mapping.data[constraint_type], constraint_value) &&
-       haskey(mapping.data[constraint_type][constraint_value], variable_index)
-        return mapping.data[constraint_type][constraint_value][variable_index]
-    end
-    return 0.0
-end
 
 """
     set_coefficient!(mapping::CouplingConstraintMapping, constraint_ref, variable_ref, coeff::Float64)
 
-Set the coefficient of a variable in a constraint.
+Add a constraint coefficient for a variable. Stores constraint type, value, and coefficient
+as a tuple for efficient access during reduced cost computation and column addition.
 """
 function set_coefficient!(mapping::CouplingConstraintMapping, constraint_ref, variable_ref, coeff::Float64)
     constraint_index = JuMP.index(constraint_ref)
@@ -51,34 +37,33 @@ function set_coefficient!(mapping::CouplingConstraintMapping, constraint_ref, va
     constraint_type = typeof(constraint_index)
     constraint_value = constraint_index.value
     
-    # Initialize nested structure if needed
-    if !haskey(mapping.data, constraint_type)
-        mapping.data[constraint_type] = Dict{Int64, Dict{MOI.VariableIndex, Float64}}()
-    end
-    if !haskey(mapping.data[constraint_type], constraint_value)
-        mapping.data[constraint_type][constraint_value] = Dict{MOI.VariableIndex, Float64}()
+    # Initialize vector for this variable if needed
+    if !haskey(mapping.data, variable_index)
+        mapping.data[variable_index] = Vector{Tuple{DataType, Int64, Float64}}()
     end
     
-    mapping.data[constraint_type][constraint_value][variable_index] = coeff
+    # Add constraint coefficient tuple
+    push!(mapping.data[variable_index], (constraint_type, constraint_value, coeff))
 end
 
-"""
-    initialize_constraint!(mapping::CouplingConstraintMapping, constraint_ref)
 
-Initialize storage for a constraint.
 """
-function initialize_constraint!(mapping::CouplingConstraintMapping, constraint_ref)
-    constraint_index = JuMP.index(constraint_ref)
-    constraint_type = typeof(constraint_index)
-    constraint_value = constraint_index.value
-    
-    if !haskey(mapping.data, constraint_type)
-        mapping.data[constraint_type] = Dict{Int64, Dict{MOI.VariableIndex, Float64}}()
-    end
-    if !haskey(mapping.data[constraint_type], constraint_value)
-        mapping.data[constraint_type][constraint_value] = Dict{MOI.VariableIndex, Float64}()
-    end
+    get_variable_coefficients(mapping::CouplingConstraintMapping, variable_index::MOI.VariableIndex)
+
+Get all constraint coefficients for a variable. Returns a vector of tuples containing:
+(constraint_type, constraint_value, coefficient)
+
+Note: constraint_type is DataType (returned by typeof(constraint_index)) rather than 
+Type{<:MOI.ConstraintIndex} to avoid Julia type system conflicts.
+
+This enables efficient patterns for:
+- Reduced cost computation: reduced_cost = original_cost - sum(dual[constraint] * coeff for (type, value, coeff) in coefficients)
+- Column addition: for (type, value, coeff) in coefficients -> add to constraint type(value)
+"""
+function get_variable_coefficients(mapping::CouplingConstraintMapping, variable_index::MOI.VariableIndex)
+    return get(mapping.data, variable_index, Vector{Tuple{DataType, Int64, Float64}}())
 end
+
 
 """
 OriginalCostMapping
@@ -95,14 +80,14 @@ function OriginalCostMapping()
 end
 
 """
-    get_cost(mapping::OriginalCostMapping, variable_ref)
+    get_cost(mapping::OriginalCostMapping, variable_index::MOI.VariableIndex)
 
-Get the original cost of a variable.
+Get the original cost of a variable using its MOI index.
 """
-function get_cost(mapping::OriginalCostMapping, variable_ref)
-    variable_index = JuMP.index(variable_ref)
+function get_cost(mapping::OriginalCostMapping, variable_index::MOI.VariableIndex)
     return get(mapping.data, variable_index, 0.0)
 end
+
 
 """
     set_cost!(mapping::OriginalCostMapping, variable_ref, cost::Float64)
@@ -119,11 +104,8 @@ Base.iterate(mapping::CouplingConstraintMapping) = iterate(mapping.data)
 Base.iterate(mapping::CouplingConstraintMapping, state) = iterate(mapping.data, state)
 
 function Base.length(mapping::CouplingConstraintMapping)
-    total_constraints = 0
-    for constraint_type_dict in values(mapping.data)
-        total_constraints += length(constraint_type_dict)
-    end
-    return total_constraints
+    # Return number of variables that have constraint coefficients
+    return length(mapping.data)
 end
 
 Base.keys(mapping::CouplingConstraintMapping) = keys(mapping.data)
@@ -137,7 +119,7 @@ Base.values(mapping::OriginalCostMapping) = values(mapping.data)
 
 # Show methods for debugging
 function Base.show(io::IO, mapping::CouplingConstraintMapping)
-    print(io, "CouplingConstraintMapping with $(length(mapping.data)) constraint types")
+    print(io, "CouplingConstraintMapping with $(length(mapping.data)) variables")
 end
 
 function Base.show(io::IO, mapping::OriginalCostMapping)

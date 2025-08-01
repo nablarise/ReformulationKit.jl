@@ -101,11 +101,6 @@ end
 function _subproblem_solution_to_master_constr_mapping!(subproblem_models, master_model, original_to_reform_vars_mapping, original_to_reform_constrs_mapping)
     for (sp_id, subproblem_model) in subproblem_models
         subproblem_model.ext[:dw_coupling_constr_mapping] = CouplingConstraintMapping()
-        for reform_constr in values(original_to_reform_constrs_mapping)
-            if JuMP.owner_model(reform_constr) == master_model
-                initialize_constraint!(subproblem_model.ext[:dw_coupling_constr_mapping], reform_constr)
-            end
-        end
     end
 
     for (original_constr, reform_constr) in original_to_reform_constrs_mapping

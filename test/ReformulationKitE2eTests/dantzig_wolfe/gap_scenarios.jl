@@ -51,28 +51,25 @@ function test_e2e_basic_gap_decomposition_ok()
         
         # Test original cost mapping using helper methods
         cost_mapping = sp.ext[:dw_sp_var_original_cost]
-        @test ReformulationKit.get_cost(cost_mapping, sp[:x][m, 1]) == c[m,1]
-        @test ReformulationKit.get_cost(cost_mapping, sp[:x][m, 2]) == c[m,2]
+        @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 1])) == c[m,1]
+        @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 2])) == c[m,2]
         
         # Test coupling constraint mapping structure
         coupling_mapping = sp.ext[:dw_coupling_constr_mapping]
         @test isa(coupling_mapping, ReformulationKit.CouplingConstraintMapping)
-        @test length(coupling_mapping) == 2  # One per job assignment constraint
+        @test length(coupling_mapping) == 2  # Two variables with constraint coefficients
         
-        # Test that we can retrieve coefficients for the variables in master constraints
-        # Note: We can't easily test exact constraint mappings without access to master constraint refs
-        # But we can test that the mapping was created and has the expected structure
-        @test length(coupling_mapping.data) >= 1  # At least one constraint type
+        # Test that we can retrieve coefficients using the new API
+        var1_coeffs = ReformulationKit.get_variable_coefficients(coupling_mapping, JuMP.index(sp[:x][m, 1]))
+        var2_coeffs = ReformulationKit.get_variable_coefficients(coupling_mapping, JuMP.index(sp[:x][m, 2]))
         
-        # Each subproblem should have constraints for both demand constraints
-        # We test the total number of coefficients stored
-        total_coeffs = 0
-        for constraint_type_dict in values(coupling_mapping.data)
-            for constraint_dict in values(constraint_type_dict)
-                total_coeffs += length(constraint_dict)
-            end
-        end
-        @test total_coeffs == 2  # Two variables should be mapped
+        # Each variable should have exactly one constraint coefficient (demand constraint)
+        @test length(var1_coeffs) == 1
+        @test length(var2_coeffs) == 1
+        
+        # Each coefficient should be 1.0 for demand constraints
+        @test var1_coeffs[1][3] == 1.0  # coefficient part of (type, value, coeff) tuple
+        @test var2_coeffs[1][3] == 1.0
     end
 end
 
@@ -217,31 +214,29 @@ function test_e2e_gap_with_penalties_complete_validation_ok()
         
         # Test original cost mapping using helper methods
         cost_mapping = sp.ext[:dw_sp_var_original_cost]
-        @test ReformulationKit.get_cost(cost_mapping, sp[:x][m, 1]) == Float64(assignment_costs[m, 1])
-        @test ReformulationKit.get_cost(cost_mapping, sp[:x][m, 2]) == Float64(assignment_costs[m, 2])
-        @test ReformulationKit.get_cost(cost_mapping, sp[:x][m, 3]) == Float64(assignment_costs[m, 3])
+        @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 1])) == Float64(assignment_costs[m, 1])
+        @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 2])) == Float64(assignment_costs[m, 2])
+        @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 3])) == Float64(assignment_costs[m, 3])
         
         # Test coupling constraint mapping structure
         coupling_mapping = sp.ext[:dw_coupling_constr_mapping]
         @test isa(coupling_mapping, ReformulationKit.CouplingConstraintMapping)
-        @test length(coupling_mapping) == 3  # One per assignment constraint
+        @test length(coupling_mapping) == 3  # Three variables with constraint coefficients
         
-        # Test that we can retrieve coefficients for the variables in master constraints
-        # Note: We can't easily test exact constraint mappings without access to master constraint refs
-        # But we can test that the mapping was created and has the expected structure
-        @test length(coupling_mapping.data) >= 1  # At least one constraint type
+        # Test that we can retrieve coefficients using the new API
+        var1_coeffs = ReformulationKit.get_variable_coefficients(coupling_mapping, JuMP.index(sp[:x][m, 1]))
+        var2_coeffs = ReformulationKit.get_variable_coefficients(coupling_mapping, JuMP.index(sp[:x][m, 2]))
+        var3_coeffs = ReformulationKit.get_variable_coefficients(coupling_mapping, JuMP.index(sp[:x][m, 3]))
         
-        # Each subproblem should have constraints for three assignment constraints
-        # We test the total number of coefficients stored
-        total_coeffs = 0
-        for constraint_type_dict in values(coupling_mapping.data)
-            for constraint_dict in values(constraint_type_dict)
-                total_coeffs += length(constraint_dict)
-            end
-        end
-        @test total_coeffs == 3  # Three variables should be mapped
+        # Each variable should have exactly one constraint coefficient (assignment constraint)
+        @test length(var1_coeffs) == 1
+        @test length(var2_coeffs) == 1
+        @test length(var3_coeffs) == 1
         
-        # The wrapper properly stores the mapping with type-separated keys
+        # Each coefficient should be 1.0 for assignment constraints
+        @test var1_coeffs[1][3] == 1.0  # coefficient part of (type, value, coeff) tuple
+        @test var2_coeffs[1][3] == 1.0
+        @test var3_coeffs[1][3] == 1.0
     end    
 end
 
