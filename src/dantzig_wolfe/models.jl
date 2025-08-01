@@ -93,17 +93,17 @@ function _populate_subproblem_mapping(master_model, original_constr_expr::AffExp
     for (original_var, value) in original_constr_expr.terms
         reform_var = original_to_reform_vars_mapping[original_var]
         if JuMP.owner_model(reform_var) != master_model
-            JuMP.owner_model(reform_var).ext[:dw_coupling_constr_mapping][reform_constr][reform_var] = value
+            set_coefficient!(JuMP.owner_model(reform_var).ext[:dw_coupling_constr_mapping], reform_constr, reform_var, value)
         end
     end
 end
 
 function _subproblem_solution_to_master_constr_mapping!(subproblem_models, master_model, original_to_reform_vars_mapping, original_to_reform_constrs_mapping)
     for (sp_id, subproblem_model) in subproblem_models
-        subproblem_model.ext[:dw_coupling_constr_mapping] = Dict{Any, Dict{Any,Float64}}() # var_id => Dict(constr_id => coeff))
+        subproblem_model.ext[:dw_coupling_constr_mapping] = CouplingConstraintMapping()
         for reform_constr in values(original_to_reform_constrs_mapping)
             if JuMP.owner_model(reform_constr) == master_model
-                subproblem_model.ext[:dw_coupling_constr_mapping][reform_constr] = Dict()
+                initialize_constraint!(subproblem_model.ext[:dw_coupling_constr_mapping], reform_constr)
             end
         end
     end
@@ -120,7 +120,7 @@ function _populate_cost_mapping(master_model, original_obj_expr::JuMP.AffExpr, o
     for (original_var, cost) in original_obj_expr.terms
         reform_var = original_to_reform_vars_mapping[original_var]
         if JuMP.owner_model(reform_var) != master_model
-            JuMP.owner_model(reform_var).ext[:dw_sp_var_original_cost][reform_var] = cost
+            set_cost!(JuMP.owner_model(reform_var).ext[:dw_sp_var_original_cost], reform_var, cost)
         end
     end
 end
@@ -128,13 +128,13 @@ end
 function _populate_cost_mapping(master_model, single_var::JuMP.VariableRef, original_to_reform_vars_mapping)
     reform_var = original_to_reform_vars_mapping[single_var]
     if JuMP.owner_model(reform_var) != master_model
-        JuMP.owner_model(reform_var).ext[:dw_sp_var_original_cost][reform_var] = 1.0
+        set_cost!(JuMP.owner_model(reform_var).ext[:dw_sp_var_original_cost], reform_var, 1.0)
     end
 end
 
 function _subproblem_solution_to_original_cost_mapping!(subproblem_models, master_model, original_model, original_to_reform_vars_mapping)
     for (sp_id, subproblem_model) in subproblem_models
-        subproblem_model.ext[:dw_sp_var_original_cost] = Dict{Any, Float64}()
+        subproblem_model.ext[:dw_sp_var_original_cost] = OriginalCostMapping()
     end
     _populate_cost_mapping(master_model, JuMP.objective_function(original_model), original_to_reform_vars_mapping)
 end

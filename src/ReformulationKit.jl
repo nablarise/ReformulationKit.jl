@@ -2,6 +2,8 @@ module ReformulationKit
 
 using JuMP, MathOptInterface
 
+const MOI = MathOptInterface
+
 include("indexes.jl")
 
 struct SubproblemAnnotation
@@ -14,6 +16,7 @@ end
 dantzig_wolfe_subproblem(id) = SubproblemAnnotation(id)
 dantzig_wolfe_master() = MasterAnnotation()
 
+include("dantzig_wolfe/mappings.jl")
 include("dantzig_wolfe/reformulation.jl")
 include("dantzig_wolfe/partitionning.jl")
 include("dantzig_wolfe/models.jl")
@@ -58,8 +61,8 @@ A `DantzigWolfeReformulation` containing:
 
 # Subproblem Extensions
 Each subproblem model gets the following extensions in `model.ext`:
-- `:dw_coupling_constr_mapping`: Maps master constraints to subproblem variable coefficients
-- `:dw_sp_var_original_cost`: Maps subproblem variables to their original objective coefficients
+- `:dw_coupling_constr_mapping`: CouplingConstraintMapping storing master constraint to subproblem variable coefficients using type-stable MOI indices
+- `:dw_sp_var_original_cost`: OriginalCostMapping storing subproblem variables to their original objective coefficients using MOI.VariableIndex
 
 # Example
 ```julia
