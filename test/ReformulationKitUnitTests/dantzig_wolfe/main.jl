@@ -156,11 +156,11 @@ function test_dantzig_wolfe_decomposition_subproblem_extensions_ok()
         
         # Check coupling constraint mapping extension exists
         @test haskey(sp.ext, :dw_coupling_constr_mapping)
-        @test sp.ext[:dw_coupling_constr_mapping] isa Dict
+        @test sp.ext[:dw_coupling_constr_mapping] isa ReformulationKit.CouplingConstraintMapping
         
         # Check original cost mapping extension exists
         @test haskey(sp.ext, :dw_sp_var_original_cost)
-        @test sp.ext[:dw_sp_var_original_cost] isa Dict
+        @test sp.ext[:dw_sp_var_original_cost] isa ReformulationKit.OriginalCostMapping
     end
 end
 

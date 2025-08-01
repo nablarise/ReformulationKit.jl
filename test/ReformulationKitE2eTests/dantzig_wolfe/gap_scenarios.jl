@@ -46,37 +46,30 @@ function test_e2e_basic_gap_decomposition_ok()
     for (m, sp) in subproblems
         @test haskey(sp.ext, :dw_coupling_constr_mapping)
         @test haskey(sp.ext, :dw_sp_var_original_cost)
+        @test isa(sp.ext[:dw_coupling_constr_mapping], ReformulationKit.CouplingConstraintMapping)
+        @test isa(sp.ext[:dw_sp_var_original_cost], ReformulationKit.OriginalCostMapping)
         
-        # Create expected cost mapping for this subproblem
-        expected_cost_mapping = Dict(
-            sp[:x][m, 1] => c[m,1],  # cost for job 1 on machine m
-            sp[:x][m, 2] => c[m,2]  # cost for job 2 on machine m
-        )
-        
-        # Test original cost mapping by direct comparison
-        actual_cost_mapping = sp.ext[:dw_sp_var_original_cost]
-        @test actual_cost_mapping == expected_cost_mapping
+        # Test original cost mapping using helper methods
+        cost_mapping = sp.ext[:dw_sp_var_original_cost]
+        @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 1])) == c[m,1]
+        @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 2])) == c[m,2]
         
         # Test coupling constraint mapping structure
         coupling_mapping = sp.ext[:dw_coupling_constr_mapping]
-        @test isa(coupling_mapping, Dict)
-        @test length(coupling_mapping) == 2  # One per job assignment constraint
+        @test isa(coupling_mapping, ReformulationKit.CouplingConstraintMapping)
+        @test length(coupling_mapping) == 2  # Two variables with constraint coefficients
         
-        # Create expected coupling structure (values only, since keys are constraint refs)
-        expected_coupling_values = Set([
-            Dict(sp[:x][m, 1] => 1.0),  # Variable for job 1 with coefficient 1.0 in cov constraint
-            Dict(sp[:x][m, 2] => 1.0)   # Variable for job 2 with coefficient 1.0 in cov constraint
-        ])
+        # Test that we can retrieve coefficients using the new API
+        var1_coeffs = ReformulationKit.get_variable_coefficients(coupling_mapping, JuMP.index(sp[:x][m, 1]))
+        var2_coeffs = ReformulationKit.get_variable_coefficients(coupling_mapping, JuMP.index(sp[:x][m, 2]))
         
-        # Extract actual coupling values and compare
-        actual_coupling_values = Set(values(coupling_mapping))
-        @test actual_coupling_values == expected_coupling_values
+        # Each variable should have exactly one constraint coefficient (demand constraint)
+        @test length(var1_coeffs) == 1
+        @test length(var2_coeffs) == 1
         
-        # Verify constraint keys belong to master
-        for master_constr in keys(coupling_mapping)
-            @test master_constr isa JuMP.ConstraintRef
-            @test JuMP.owner_model(master_constr) == master
-        end
+        # Each coefficient should be 1.0 for demand constraints
+        @test var1_coeffs[1][3] == 1.0  # coefficient part of (type, value, coeff) tuple
+        @test var2_coeffs[1][3] == 1.0
     end
 end
 
@@ -219,38 +212,31 @@ function test_e2e_gap_with_penalties_complete_validation_ok()
     for m in machines
         sp = subproblems[m]
         
-        # Create expected cost mapping for this subproblem
-        expected_cost_mapping = Dict(
-            sp[:x][m, 1] => Float64(assignment_costs[m, 1]),  # Cost for job 1
-            sp[:x][m, 2] => Float64(assignment_costs[m, 2]),  # Cost for job 2
-            sp[:x][m, 3] => Float64(assignment_costs[m, 3])   # Cost for job 3
-        )
-        
-        # Test original cost mapping by direct comparison
-        actual_cost_mapping = sp.ext[:dw_sp_var_original_cost]
-        @test actual_cost_mapping == expected_cost_mapping
+        # Test original cost mapping using helper methods
+        cost_mapping = sp.ext[:dw_sp_var_original_cost]
+        @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 1])) == Float64(assignment_costs[m, 1])
+        @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 2])) == Float64(assignment_costs[m, 2])
+        @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 3])) == Float64(assignment_costs[m, 3])
         
         # Test coupling constraint mapping structure
         coupling_mapping = sp.ext[:dw_coupling_constr_mapping]
-        @test isa(coupling_mapping, Dict)
-        @test length(coupling_mapping) == 3  # One per assignment constraint
+        @test isa(coupling_mapping, ReformulationKit.CouplingConstraintMapping)
+        @test length(coupling_mapping) == 3  # Three variables with constraint coefficients
         
-        # Create expected coupling structure (values only, since keys are constraint refs)
-        expected_coupling_values = Set([
-            Dict(sp[:x][m, 1] => 1.0),  # Variable for job 1 with coefficient 1.0
-            Dict(sp[:x][m, 2] => 1.0),  # Variable for job 2 with coefficient 1.0
-            Dict(sp[:x][m, 3] => 1.0)   # Variable for job 3 with coefficient 1.0
-        ])
+        # Test that we can retrieve coefficients using the new API
+        var1_coeffs = ReformulationKit.get_variable_coefficients(coupling_mapping, JuMP.index(sp[:x][m, 1]))
+        var2_coeffs = ReformulationKit.get_variable_coefficients(coupling_mapping, JuMP.index(sp[:x][m, 2]))
+        var3_coeffs = ReformulationKit.get_variable_coefficients(coupling_mapping, JuMP.index(sp[:x][m, 3]))
         
-        # Extract actual coupling values and compare
-        actual_coupling_values = Set(values(coupling_mapping))
-        @test actual_coupling_values == expected_coupling_values
+        # Each variable should have exactly one constraint coefficient (assignment constraint)
+        @test length(var1_coeffs) == 1
+        @test length(var2_coeffs) == 1
+        @test length(var3_coeffs) == 1
         
-        # Verify constraint keys belong to master
-        for master_constr in keys(coupling_mapping)
-            @test master_constr isa JuMP.ConstraintRef
-            @test JuMP.owner_model(master_constr) == master
-        end
+        # Each coefficient should be 1.0 for assignment constraints
+        @test var1_coeffs[1][3] == 1.0  # coefficient part of (type, value, coeff) tuple
+        @test var2_coeffs[1][3] == 1.0
+        @test var3_coeffs[1][3] == 1.0
     end    
 end
 
