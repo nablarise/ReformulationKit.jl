@@ -240,6 +240,38 @@ function test_e2e_gap_with_penalties_complete_validation_ok()
     end    
 end
 
+function test_e2e_gap_with_objective_constant_ok()
+    # Test with a model that has a constant in the objective
+    J = 1:2  
+    M = 1:2
+    c = [1 2; 3 4]
+    
+    model = Model()
+    @variable(model, x[M, J], Bin)
+    @constraint(model, cov[j in J], sum(x[m, j] for m in M) >= 1)
+    @constraint(model, knp[m in M], sum(x[m, j] for j in J) <= 2)
+    @objective(model, Min, sum(c[m, j] * x[m, j] for m in M, j in J) + 100)  # Add constant
+    
+    # Perform decomposition
+    reformulation = RK.dantzig_wolfe_decomposition(model, dw_annotation)
+    subproblems = RK.subproblems(reformulation)
+    master = RK.master(reformulation)
+    
+    # Test that subproblems have zero constants in objectives
+    for (m, sp) in subproblems
+        sp_obj = JuMP.objective_function(sp)
+        if sp_obj isa JuMP.AffExpr
+            @test sp_obj.constant == 0.0  # Subproblem should have zero constant
+        end
+    end
+    
+    # Test that master preserves the constant
+    master_obj = JuMP.objective_function(master)
+    if master_obj isa JuMP.AffExpr
+        @test master_obj.constant == 100.0  # Master should preserve constant
+    end
+end
+
 function test_e2e_dantzig_wolfe_gap_scenarios()
     @testset "[e2e] basic GAP decomposition" begin
         test_e2e_basic_gap_decomposition_ok()
@@ -247,5 +279,9 @@ function test_e2e_dantzig_wolfe_gap_scenarios()
 
     @testset "[e2e] GAP with penalties complete validation" begin
         test_e2e_gap_with_penalties_complete_validation_ok()
+    end
+    
+    @testset "[e2e] GAP with objective constant" begin
+        test_e2e_gap_with_objective_constant_ok()
     end
 end

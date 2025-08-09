@@ -146,9 +146,9 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
     
     # Create objectives
     for (sp_id, sp_model) in subproblem_models
-        _register_objective!(sp_model, model, original_to_reform_vars_mapping)
+        _register_objective!(sp_model, model, original_to_reform_vars_mapping; is_master=false)
     end
-    _register_objective!(master_model, model, original_to_reform_vars_mapping)
+    _register_objective!(master_model, model, original_to_reform_vars_mapping; is_master=true)
 
     # Add convexity constraints (initially empty)
     convexity_constraints_lb = Dict()
