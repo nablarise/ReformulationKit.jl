@@ -27,16 +27,17 @@ function _original_var_info(original_model, var_name, index)
 end
 
 
-function _replace_vars_in_func(func::JuMP.AffExpr, target_model, original_to_subproblem_vars_mapping::VariableMapping)
+function _replace_vars_in_func(func::JuMP.AffExpr, target_model, original_to_subproblem_vars_mapping::VariableMapping; preserve_constant::Bool = true)
     terms = [
         original_to_subproblem_vars_mapping[var] => coeff 
         for (var, coeff) in func.terms
         if JuMP.owner_model(original_to_subproblem_vars_mapping[var]) == target_model
     ]
-    return AffExpr(func.constant, terms...)
+    constant = preserve_constant ? func.constant : 0.0
+    return AffExpr(constant, terms...)
 end
 
-function _replace_vars_in_func(single_var::JuMP.VariableRef, target_model, original_to_subproblem_vars_mapping::VariableMapping)
+function _replace_vars_in_func(single_var::JuMP.VariableRef, target_model, original_to_subproblem_vars_mapping::VariableMapping; preserve_constant::Bool = true)
     if JuMP.owner_model(original_to_subproblem_vars_mapping[single_var]) == target_model
         return original_to_subproblem_vars_mapping[single_var]
     end
@@ -134,13 +135,14 @@ function _subproblem_solution_to_original_cost_mapping!(subproblem_models, maste
     _populate_cost_mapping(master_model, JuMP.objective_function(original_model), original_to_reform_vars_mapping)
 end
 
-function _register_objective!(reform_model, model, original_to_reform_vars_mapping::VariableMapping)
+function _register_objective!(reform_model, model, original_to_reform_vars_mapping::VariableMapping; is_master::Bool = false)
     # Get original objective function and sense
     original_obj_func = JuMP.objective_function(model)
     original_obj_sense = JuMP.objective_sense(model)
     
-    # Create new AffExpr with filtered terms and original constant
-    reform_obj_func = _replace_vars_in_func(original_obj_func, reform_model, original_to_reform_vars_mapping)
+    # Create new AffExpr with filtered terms
+    # Subproblems should have zero constants, master preserves constants
+    reform_obj_func = _replace_vars_in_func(original_obj_func, reform_model, original_to_reform_vars_mapping; preserve_constant=is_master)
         
     # Set objective on reform_model
     JuMP.set_objective_sense(reform_model, original_obj_sense)

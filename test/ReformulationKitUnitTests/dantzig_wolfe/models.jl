@@ -174,7 +174,7 @@ function test_register_objective_filters_variables_ok()
     end
     
     # Test master objective gets only master variables
-    RK._register_objective!(master_model, original_model, var_mapping)
+    RK._register_objective!(master_model, original_model, var_mapping; is_master=true)
     
     master_obj = JuMP.objective_function(master_model)
     @test master_obj isa JuMP.AffExpr
@@ -194,7 +194,7 @@ function test_register_objective_preserves_sense_ok()
     var_mapping = VariableMapping()
     var_mapping[original_model[:x]] = reform_model[:y]
     
-    RK._register_objective!(reform_model, original_model, var_mapping)
+    RK._register_objective!(reform_model, original_model, var_mapping; is_master=true)
     
     @test JuMP.objective_sense(reform_model) == MOI.MAX_SENSE
 end
@@ -211,9 +211,51 @@ function test_register_objective_preserves_coefficients_ok()
         var_mapping[original_model[:x][i]] = reform_model[:y][i]
     end
     
-    RK._register_objective!(reform_model, original_model, var_mapping)
+    RK._register_objective!(reform_model, original_model, var_mapping; is_master=true)
     
     reform_obj = JuMP.objective_function(reform_model)
+    @test reform_obj.terms[reform_model[:y][1]] == 3.0
+    @test reform_obj.terms[reform_model[:y][2]] == 5.0
+end
+
+function test_register_objective_subproblem_zero_constant_ok()
+    original_model = Model()
+    @variable(original_model, x[1:2])
+    @objective(original_model, Min, 3*x[1] + 5*x[2] + 10)  # Objective with constant
+    
+    reform_model = Model()
+    @variable(reform_model, y[1:2])
+    var_mapping = VariableMapping()
+    for i in 1:2
+        var_mapping[original_model[:x][i]] = reform_model[:y][i]
+    end
+    
+    # Test subproblem objective (is_master=false) removes constants
+    RK._register_objective!(reform_model, original_model, var_mapping; is_master=false)
+    
+    reform_obj = JuMP.objective_function(reform_model)
+    @test reform_obj.constant == 0.0  # Subproblem should have zero constant
+    @test reform_obj.terms[reform_model[:y][1]] == 3.0
+    @test reform_obj.terms[reform_model[:y][2]] == 5.0
+end
+
+function test_register_objective_master_preserves_constant_ok()
+    original_model = Model()
+    @variable(original_model, x[1:2])
+    @objective(original_model, Min, 3*x[1] + 5*x[2] + 10)  # Objective with constant
+    
+    reform_model = Model()
+    @variable(reform_model, y[1:2])
+    var_mapping = VariableMapping()
+    for i in 1:2
+        var_mapping[original_model[:x][i]] = reform_model[:y][i]
+    end
+    
+    # Test master objective (is_master=true) preserves constants
+    RK._register_objective!(reform_model, original_model, var_mapping; is_master=true)
+    
+    reform_obj = JuMP.objective_function(reform_model)
+    @test reform_obj.constant == 10.0  # Master should preserve constant
     @test reform_obj.terms[reform_model[:y][1]] == 3.0
     @test reform_obj.terms[reform_model[:y][2]] == 5.0
 end
@@ -235,5 +277,7 @@ function test_unit_models()
         test_register_objective_filters_variables_ok()
         test_register_objective_preserves_sense_ok()
         test_register_objective_preserves_coefficients_ok()
+        test_register_objective_subproblem_zero_constant_ok()
+        test_register_objective_master_preserves_constant_ok()
     end
 end
