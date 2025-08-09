@@ -106,8 +106,8 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
     master_model = Model()
     JuMP.set_objective_sense(master_model, JuMP.objective_sense(model))
 
-    original_to_reform_vars_mapping = Dict()
-    original_to_reform_constrs_mapping = Dict()
+    original_to_reform_vars_mapping = VariableMapping()
+    original_to_reform_constrs_mapping = ConstraintMapping()
 
     master_var_infos = Dict(
         var_name => Dict(

@@ -27,7 +27,7 @@ function _original_var_info(original_model, var_name, index)
 end
 
 
-function _replace_vars_in_func(func::JuMP.AffExpr, target_model, original_to_subproblem_vars_mapping)
+function _replace_vars_in_func(func::JuMP.AffExpr, target_model, original_to_subproblem_vars_mapping::VariableMapping)
     terms = [
         original_to_subproblem_vars_mapping[var] => coeff 
         for (var, coeff) in func.terms
@@ -36,7 +36,7 @@ function _replace_vars_in_func(func::JuMP.AffExpr, target_model, original_to_sub
     return AffExpr(func.constant, terms...)
 end
 
-function _replace_vars_in_func(single_var::JuMP.VariableRef, target_model, original_to_subproblem_vars_mapping)
+function _replace_vars_in_func(single_var::JuMP.VariableRef, target_model, original_to_subproblem_vars_mapping::VariableMapping)
     if JuMP.owner_model(original_to_subproblem_vars_mapping[single_var]) == target_model
         return original_to_subproblem_vars_mapping[single_var]
     end
@@ -44,7 +44,7 @@ function _replace_vars_in_func(single_var::JuMP.VariableRef, target_model, origi
 end
 
 # Create and register variables in reform model, updating variable mapping
-function _register_variables!(reform_model, original_to_reform_mapping, original_model, var_infos_by_names)
+function _register_variables!(reform_model, original_to_reform_mapping::VariableMapping, original_model, var_infos_by_names)
     for (var_name, var_infos_by_indexes) in var_infos_by_names
         vars = Containers.container(
             (index...) -> begin
@@ -64,7 +64,7 @@ function _register_variables!(reform_model, original_to_reform_mapping, original
 end
 
 # Create and register constraints in reform model using mapped variables
-function _register_constraints!(reform_model, original_to_reform_constr_mapping, original_model, constr_by_names, original_to_reform_vars_mapping)
+function _register_constraints!(reform_model, original_to_reform_constr_mapping::ConstraintMapping, original_model, constr_by_names, original_to_reform_vars_mapping::VariableMapping)
     for (constr_name, constr_by_indexes) in constr_by_names
         constrs = JuMP.Containers.container(
             (index...) -> begin
@@ -89,7 +89,7 @@ function _register_constraints!(reform_model, original_to_reform_constr_mapping,
     end
 end
 
-function _populate_subproblem_mapping(master_model, original_constr_expr::AffExpr, reform_constr, original_to_reform_vars_mapping )
+function _populate_subproblem_mapping(master_model, original_constr_expr::AffExpr, reform_constr, original_to_reform_vars_mapping::VariableMapping)
     for (original_var, value) in original_constr_expr.terms
         reform_var = original_to_reform_vars_mapping[original_var]
         if JuMP.owner_model(reform_var) != master_model
@@ -98,7 +98,7 @@ function _populate_subproblem_mapping(master_model, original_constr_expr::AffExp
     end
 end
 
-function _subproblem_solution_to_master_constr_mapping!(subproblem_models, master_model, original_to_reform_vars_mapping, original_to_reform_constrs_mapping)
+function _subproblem_solution_to_master_constr_mapping!(subproblem_models, master_model, original_to_reform_vars_mapping::VariableMapping, original_to_reform_constrs_mapping::ConstraintMapping)
     for (sp_id, subproblem_model) in subproblem_models
         subproblem_model.ext[:dw_coupling_constr_mapping] = CouplingConstraintMapping()
     end
@@ -111,7 +111,7 @@ function _subproblem_solution_to_master_constr_mapping!(subproblem_models, maste
     end
 end
 
-function _populate_cost_mapping(master_model, original_obj_expr::JuMP.AffExpr, original_to_reform_vars_mapping)
+function _populate_cost_mapping(master_model, original_obj_expr::JuMP.AffExpr, original_to_reform_vars_mapping::VariableMapping)
     for (original_var, cost) in original_obj_expr.terms
         reform_var = original_to_reform_vars_mapping[original_var]
         if JuMP.owner_model(reform_var) != master_model
@@ -120,21 +120,21 @@ function _populate_cost_mapping(master_model, original_obj_expr::JuMP.AffExpr, o
     end
 end
 
-function _populate_cost_mapping(master_model, single_var::JuMP.VariableRef, original_to_reform_vars_mapping)
+function _populate_cost_mapping(master_model, single_var::JuMP.VariableRef, original_to_reform_vars_mapping::VariableMapping)
     reform_var = original_to_reform_vars_mapping[single_var]
     if JuMP.owner_model(reform_var) != master_model
         set_cost!(JuMP.owner_model(reform_var).ext[:dw_sp_var_original_cost], reform_var, 1.0)
     end
 end
 
-function _subproblem_solution_to_original_cost_mapping!(subproblem_models, master_model, original_model, original_to_reform_vars_mapping)
+function _subproblem_solution_to_original_cost_mapping!(subproblem_models, master_model, original_model, original_to_reform_vars_mapping::VariableMapping)
     for (sp_id, subproblem_model) in subproblem_models
         subproblem_model.ext[:dw_sp_var_original_cost] = OriginalCostMapping()
     end
     _populate_cost_mapping(master_model, JuMP.objective_function(original_model), original_to_reform_vars_mapping)
 end
 
-function _register_objective!(reform_model, model, original_to_reform_vars_mapping)
+function _register_objective!(reform_model, model, original_to_reform_vars_mapping::VariableMapping)
     # Get original objective function and sense
     original_obj_func = JuMP.objective_function(model)
     original_obj_sense = JuMP.objective_sense(model)

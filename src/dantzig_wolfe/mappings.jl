@@ -127,3 +127,81 @@ end
 function Base.show(io::IO, mapping::OriginalCostMapping)
     print(io, "OriginalCostMapping with $(length(mapping.data)) variables")
 end
+
+
+"""
+VariableMapping
+
+Stores the mapping from original variables to reformulation variables in Dantzig-Wolfe decomposition.
+Each original variable in the problem is mapped to its corresponding variable in either the master
+problem or one of the subproblems.
+
+This mapping is essential for:
+- Translating constraints from the original formulation to the reformulated models
+- Mapping objective function coefficients to the appropriate submodels
+- Maintaining variable relationships during decomposition
+
+Fields:
+- mapping::Dict{JuMP.VariableRef, JuMP.VariableRef}: Direct mapping from original to reform variables
+"""
+struct VariableMapping
+    mapping::Dict{JuMP.VariableRef, JuMP.VariableRef}
+end
+
+function VariableMapping()
+    return VariableMapping(Dict{JuMP.VariableRef, JuMP.VariableRef}())
+end
+
+# Base methods to make VariableMapping behave like a dictionary
+Base.getindex(mapping::VariableMapping, key::JuMP.VariableRef) = mapping.mapping[key]
+Base.setindex!(mapping::VariableMapping, value::JuMP.VariableRef, key::JuMP.VariableRef) = mapping.mapping[key] = value
+Base.haskey(mapping::VariableMapping, key::JuMP.VariableRef) = haskey(mapping.mapping, key)
+Base.keys(mapping::VariableMapping) = keys(mapping.mapping)
+Base.values(mapping::VariableMapping) = values(mapping.mapping)
+Base.iterate(mapping::VariableMapping) = iterate(mapping.mapping)
+Base.iterate(mapping::VariableMapping, state) = iterate(mapping.mapping, state)
+Base.length(mapping::VariableMapping) = length(mapping.mapping)
+
+# Show method for debugging
+function Base.show(io::IO, mapping::VariableMapping)
+    print(io, "VariableMapping with $(length(mapping.mapping)) variable mappings")
+end
+
+
+"""
+ConstraintMapping
+
+Stores the mapping from original constraints to reformulation constraints in Dantzig-Wolfe decomposition.
+Each original constraint in the problem is mapped to its corresponding constraint in either the master
+problem or one of the subproblems.
+
+This mapping is essential for:
+- Translating constraints from the original formulation to the reformulated models
+- Maintaining constraint relationships during decomposition
+- Enabling efficient constraint access and updates
+
+Fields:
+- mapping::Dict{JuMP.ConstraintRef, JuMP.ConstraintRef}: Direct mapping from original to reform constraints
+"""
+struct ConstraintMapping
+    mapping::Dict{JuMP.ConstraintRef, JuMP.ConstraintRef}
+end
+
+function ConstraintMapping()
+    return ConstraintMapping(Dict{JuMP.ConstraintRef, JuMP.ConstraintRef}())
+end
+
+# Base methods to make ConstraintMapping behave like a dictionary
+Base.getindex(mapping::ConstraintMapping, key::JuMP.ConstraintRef) = mapping.mapping[key]
+Base.setindex!(mapping::ConstraintMapping, value::JuMP.ConstraintRef, key::JuMP.ConstraintRef) = mapping.mapping[key] = value
+Base.haskey(mapping::ConstraintMapping, key::JuMP.ConstraintRef) = haskey(mapping.mapping, key)
+Base.keys(mapping::ConstraintMapping) = keys(mapping.mapping)
+Base.values(mapping::ConstraintMapping) = values(mapping.mapping)
+Base.iterate(mapping::ConstraintMapping) = iterate(mapping.mapping)
+Base.iterate(mapping::ConstraintMapping, state) = iterate(mapping.mapping, state)
+Base.length(mapping::ConstraintMapping) = length(mapping.mapping)
+
+# Show method for debugging
+function Base.show(io::IO, mapping::ConstraintMapping)
+    print(io, "ConstraintMapping with $(length(mapping.mapping)) constraint mappings")
+end

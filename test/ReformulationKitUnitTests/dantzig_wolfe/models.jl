@@ -1,6 +1,7 @@
 # Unit tests for model creation methods in dantzig_wolfe/models.jl
 
 using JuMP, ReformulationKit, Test
+using ReformulationKit: VariableMapping, ConstraintMapping
 
 const RK = ReformulationKit
 
@@ -8,7 +9,7 @@ const RK = ReformulationKit
 function test_register_variables_creates_vars_ok()
     original_model, machines, jobs = create_mixed_gap()
     reform_model = Model()
-    mapping = Dict()
+    mapping = VariableMapping()
     
     # Test with x variables for machine 1
     var_infos = Dict(
@@ -28,7 +29,7 @@ function test_register_variables_preserves_properties_ok()
     original_model = Model()
     @variable(original_model, x[1:2], Bin)
     reform_model = Model()
-    mapping = Dict()
+    mapping = VariableMapping()
     
     var_infos = Dict(
         :x => Dict(
@@ -48,7 +49,7 @@ function test_register_variables_updates_mapping_ok()
     original_model = Model()
     @variable(original_model, x)
     reform_model = Model()
-    mapping = Dict()
+    mapping = VariableMapping()
     
     var_infos = Dict(
         :x => Dict(
@@ -67,8 +68,8 @@ end
 function test_register_constraints_creates_constraints_ok()
     original_model, machines, jobs = create_mixed_gap()
     reform_model = Model()
-    constr_mapping = Dict()
-    var_mapping = Dict()
+    constr_mapping = ConstraintMapping()
+    var_mapping = VariableMapping()
     
     # Create variables in reform model first
     @variable(reform_model, x[machines, jobs], Bin)
@@ -99,8 +100,11 @@ function test_register_constraints_maps_variables_ok()
     reform_model = Model()
     @variable(reform_model, y[1:2])
     
-    constr_mapping = Dict()
-    var_mapping = Dict(original_model[:x][i] => reform_model[:y][i] for i in 1:2)
+    constr_mapping = ConstraintMapping()
+    var_mapping = VariableMapping()
+    for i in 1:2
+        var_mapping[original_model[:x][i]] = reform_model[:y][i]
+    end
     constrs = Dict(:test_constraint => Set([()]))
     
     RK._register_constraints!(reform_model, constr_mapping, original_model, constrs, var_mapping)
@@ -124,8 +128,9 @@ function test_register_constraints_preserves_sets_ok()
     reform_model = Model()
     @variable(reform_model, y)
     
-    constr_mapping = Dict()
-    var_mapping = Dict(original_model[:x] => reform_model[:y])
+    constr_mapping = ConstraintMapping()
+    var_mapping = VariableMapping()
+    var_mapping[original_model[:x]] = reform_model[:y]
     constrs = Dict(
         :eq_constraint => Set([()]),
         :leq_constraint => Set([()]),
@@ -159,7 +164,7 @@ function test_register_objective_filters_variables_ok()
     @variable(subproblem2_model, y[2:2, jobs] >= 0)
     
     # Create complete variable mapping for all variables
-    var_mapping = Dict()
+    var_mapping = VariableMapping()
     for j in jobs
         var_mapping[original_model[:z][j]] = master_model[:z][j]
         var_mapping[original_model[:x][1, j]] = subproblem1_model[:x][1, j]
@@ -186,7 +191,8 @@ function test_register_objective_preserves_sense_ok()
     
     reform_model = Model()
     @variable(reform_model, y)
-    var_mapping = Dict(original_model[:x] => reform_model[:y])
+    var_mapping = VariableMapping()
+    var_mapping[original_model[:x]] = reform_model[:y]
     
     RK._register_objective!(reform_model, original_model, var_mapping)
     
@@ -200,7 +206,10 @@ function test_register_objective_preserves_coefficients_ok()
     
     reform_model = Model()
     @variable(reform_model, y[1:2])
-    var_mapping = Dict(original_model[:x][i] => reform_model[:y][i] for i in 1:2)
+    var_mapping = VariableMapping()
+    for i in 1:2
+        var_mapping[original_model[:x][i]] = reform_model[:y][i]
+    end
     
     RK._register_objective!(reform_model, original_model, var_mapping)
     
