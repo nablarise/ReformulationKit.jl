@@ -116,6 +116,8 @@ Base.iterate(mapping::OriginalCostMapping, state) = iterate(mapping.data, state)
 Base.length(mapping::OriginalCostMapping) = length(mapping.data)
 Base.keys(mapping::OriginalCostMapping) = keys(mapping.data)
 Base.values(mapping::OriginalCostMapping) = values(mapping.data)
+Base.haskey(mapping::OriginalCostMapping, key::MOI.VariableIndex) = haskey(mapping.data, key)
+Base.getindex(mapping::OriginalCostMapping, key::MOI.VariableIndex) = getindex(mapping.data, key)
 
 # Show methods for debugging
 function Base.show(io::IO, mapping::CouplingConstraintMapping)

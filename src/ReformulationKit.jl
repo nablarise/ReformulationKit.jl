@@ -153,9 +153,13 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
     # Add convexity constraints (initially empty)
     convexity_constraints_lb = Dict()
     convexity_constraints_ub = Dict()
+
+    @constraint(master_model, conv_lb[sp_id in subproblem_ids], 0 >= 0)
+    @constraint(master_model, conv_ub[sp_id in subproblem_ids], 0 <= 1)
+
     for sp_id in subproblem_ids
-        convexity_constraints_lb[sp_id] = @constraint(master_model, 0 >= 1)
-        convexity_constraints_ub[sp_id] = @constraint(master_model, 0 <= 1)
+        convexity_constraints_lb[sp_id] = conv_lb[sp_id]
+        convexity_constraints_ub[sp_id] = conv_ub[sp_id]
     end
 
     _subproblem_solution_to_master_constr_mapping!(

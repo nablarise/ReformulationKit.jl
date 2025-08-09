@@ -57,7 +57,7 @@ function _register_variables!(reform_model, original_to_reform_mapping, original
                 original_var = get_scalar_object(original_model, var_name, index)
                 original_to_reform_mapping[original_var] = JuMP.add_variable(reform_model, var, jump_var_name)
             end,
-            collect(keys(var_infos_by_indexes))
+            sort(collect(keys(var_infos_by_indexes)))
         )
         reform_model[var_name] = vars
     end
@@ -83,7 +83,7 @@ function _register_constraints!(reform_model, original_to_reform_constr_mapping,
                 end
                 original_to_reform_constr_mapping[original_constr] = JuMP.add_constraint(reform_model, constr, jump_constr_name)
             end,
-            collect(constr_by_indexes)
+            sort(collect(constr_by_indexes))
         )
         reform_model[constr_name] = constrs
     end
