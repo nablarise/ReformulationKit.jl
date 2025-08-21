@@ -26,7 +26,6 @@ function _original_var_info(original_model, var_name, index)
     )
 end
 
-
 function _replace_vars_in_func(func::JuMP.AffExpr, target_model, original_to_subproblem_vars_mapping::VariableMapping; preserve_constant::Bool = true)
     terms = [
         original_to_subproblem_vars_mapping[var] => coeff 
@@ -47,6 +46,7 @@ end
 # Create and register variables in reform model, updating variable mapping
 function _register_variables!(reform_model, original_to_reform_mapping::VariableMapping, original_model, var_infos_by_names)
     for (var_name, var_infos_by_indexes) in var_infos_by_names
+        indices = sort(collect(keys(var_infos_by_indexes)))
         vars = Containers.container(
             (index...) -> begin
                 var = JuMP.build_variable(() -> error("todo."), var_infos_by_indexes[index])
@@ -58,7 +58,7 @@ function _register_variables!(reform_model, original_to_reform_mapping::Variable
                 original_var = get_scalar_object(original_model, var_name, index)
                 original_to_reform_mapping[original_var] = JuMP.add_variable(reform_model, var, jump_var_name)
             end,
-            sort(collect(keys(var_infos_by_indexes)))
+            indices
         )
         reform_model[var_name] = vars
     end
@@ -67,6 +67,7 @@ end
 # Create and register constraints in reform model using mapped variables
 function _register_constraints!(reform_model, original_to_reform_constr_mapping::ConstraintMapping, original_model, constr_by_names, original_to_reform_vars_mapping::VariableMapping)
     for (constr_name, constr_by_indexes) in constr_by_names
+        indices = sort(collect(constr_by_indexes))
         constrs = JuMP.Containers.container(
             (index...) -> begin
                 original_constr = get_scalar_object(original_model, constr_name, index)
@@ -84,7 +85,7 @@ function _register_constraints!(reform_model, original_to_reform_constr_mapping:
                 end
                 original_to_reform_constr_mapping[original_constr] = JuMP.add_constraint(reform_model, constr, jump_constr_name)
             end,
-            sort(collect(constr_by_indexes))
+            indices
         )
         reform_model[constr_name] = constrs
     end

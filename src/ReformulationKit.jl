@@ -20,6 +20,7 @@ include("dantzig_wolfe/mappings.jl")
 include("dantzig_wolfe/reformulation.jl")
 include("dantzig_wolfe/partitionning.jl")
 include("dantzig_wolfe/models.jl")
+include("dantzig_wolfe/macro.jl")
 
 
 """
@@ -173,6 +174,6 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
     return DantzigWolfeReformulation(master_model, subproblem_models, convexity_constraints_lb, convexity_constraints_ub)
 end
 
-export dantzig_wolfe_decomposition, dantzig_wolfe_subproblem, dantzig_wolfe_master
+export dantzig_wolfe_decomposition, dantzig_wolfe_subproblem, dantzig_wolfe_master, @dantzig_wolfe
 
 end # module ReformulationKit
