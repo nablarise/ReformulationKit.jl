@@ -110,7 +110,7 @@ function test_register_constraints_maps_variables_ok()
     RK._register_constraints!(reform_model, constr_mapping, original_model, constrs, var_mapping)
     
     @test haskey(reform_model.obj_dict, :test_constraint)
-    reform_constraint = reform_model[:test_constraint][()]
+    reform_constraint = reform_model[:test_constraint]  # Clean access for scalar constraints
     constraint_obj = JuMP.constraint_object(reform_constraint)
     
     # Check that the constraint uses reform variables
@@ -140,13 +140,46 @@ function test_register_constraints_preserves_sets_ok()
     RK._register_constraints!(reform_model, constr_mapping, original_model, constrs, var_mapping)
     
     # Check constraint sets are preserved
-    eq_obj = JuMP.constraint_object(reform_model[:eq_constraint][()]) # TODO: ugly
-    leq_obj = JuMP.constraint_object(reform_model[:leq_constraint][()]) # TODO: ugly
-    geq_obj = JuMP.constraint_object(reform_model[:geq_constraint][()]) # TODO: ugly
+    eq_obj = JuMP.constraint_object(reform_model[:eq_constraint])  # Clean access for scalar constraints
+    leq_obj = JuMP.constraint_object(reform_model[:leq_constraint])  # Clean access for scalar constraints
+    geq_obj = JuMP.constraint_object(reform_model[:geq_constraint])  # Clean access for scalar constraints
     
     @test eq_obj.set isa MOI.EqualTo{Float64}
     @test leq_obj.set isa MOI.LessThan{Float64}
     @test geq_obj.set isa MOI.GreaterThan{Float64}
+end
+
+function test_register_constraints_scalar_clean_access()
+    original_model = Model()
+    @variable(original_model, x)
+    @constraint(original_model, scalar_constraint, x >= 5)
+    
+    reform_model = Model()
+    @variable(reform_model, y)
+    
+    constr_mapping = ConstraintMapping()
+    var_mapping = VariableMapping()
+    var_mapping[original_model[:x]] = reform_model[:y]
+    constrs = Dict(:scalar_constraint => Set([()]))
+    
+    RK._register_constraints!(reform_model, constr_mapping, original_model, constrs, var_mapping)
+    
+    # With the new implementation, scalar constraints should be stored directly
+    @test haskey(reform_model.obj_dict, :scalar_constraint)
+    @test reform_model[:scalar_constraint] isa JuMP.ConstraintRef  # Direct ConstraintRef, not container
+    
+    # Clean access pattern - no need for ugly [()] indexing
+    scalar_constr = reform_model[:scalar_constraint]
+    @test scalar_constr isa JuMP.ConstraintRef
+    @test JuMP.owner_model(scalar_constr) == reform_model
+    
+    # Constraint mapping should work correctly
+    @test original_model[:scalar_constraint] in keys(constr_mapping)
+    @test constr_mapping[original_model[:scalar_constraint]] == scalar_constr
+    
+    # Constraint properties should be preserved
+    constr_obj = JuMP.constraint_object(scalar_constr)
+    @test constr_obj.set isa MOI.GreaterThan{Float64}
 end
 
 # Tests for _register_objective!()
@@ -271,6 +304,7 @@ function test_unit_models()
         test_register_constraints_creates_constraints_ok()
         test_register_constraints_maps_variables_ok()
         test_register_constraints_preserves_sets_ok()
+        test_register_constraints_scalar_clean_access()
     end
 
     @testset "[models] objective registration" begin
