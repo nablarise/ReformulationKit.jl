@@ -18,9 +18,8 @@ function _master_variables(model, dw_annotation)
             annotation = dw_annotation(Val(var_name))
             if annotation isa MasterAnnotation
                 if !haskey(master_vars, var_name)
-                    master_vars[var_name] = Set{Tuple}()
+                    master_vars[var_name] = Set{Tuple}([()])
                 end
-                push!(master_vars[var_name], ())
             end
         end
     end
@@ -52,7 +51,7 @@ function _partition_subproblem_variables(model, dw_annotation)
                     sp_vars_partitionning[annotation.id] = Dict{Symbol,Set{Tuple}}()
                 end
                 if !haskey(sp_vars_partitionning[annotation.id], var_name)
-                    sp_vars_partitionning[annotation.id][var_name] = Set{Tuple{}}(())
+                    sp_vars_partitionning[annotation.id][var_name] = Set{Tuple}([()])
                 end
             end
         end
@@ -80,7 +79,7 @@ function _master_constraints(model, dw_annotation)
             annotation = dw_annotation(Val(constr_name))
             if annotation isa MasterAnnotation
                 if !haskey(master_constrs, constr_name)
-                    master_constrs[constr_name] = Set{Tuple}(())
+                    master_constrs[constr_name] = Set{Tuple}([()])
                 end
             end
         end
@@ -113,7 +112,7 @@ function _partition_subproblem_constraints(model, dw_annotation)
                     sp_constrs_partitionning[annotation.id] = Dict{Symbol,Set{Tuple}}()
                 end
                 if !haskey(sp_constrs_partitionning[annotation.id], constr_name)
-                    sp_constrs_partitionning[annotation.id][constr_name] = Set{Tuple}()
+                    sp_constrs_partitionning[annotation.id][constr_name] = Set{Tuple}([()])
                 end
             end
         end
