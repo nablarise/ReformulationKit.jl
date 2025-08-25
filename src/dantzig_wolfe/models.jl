@@ -89,27 +89,54 @@ end
 # Create and register constraints in reform model using mapped variables
 function _register_constraints!(reform_model, original_to_reform_constr_mapping::ConstraintMapping, original_model, constr_by_names, original_to_reform_vars_mapping::VariableMapping)
     for (constr_name, constr_by_indexes) in constr_by_names
-        constrs = JuMP.Containers.container(
-            (index...) -> begin
-                original_constr = get_scalar_object(original_model, constr_name, index)
-                original_constr_obj = JuMP.constraint_object(original_constr)
-                mapped_func = _replace_vars_in_func(
-                    original_constr_obj.func,
-                    reform_model,
-                    original_to_reform_vars_mapping
-                )
-                constr = JuMP.build_constraint(() -> error("todo."), mapped_func, original_constr_obj.set)
-                jump_constr_name = if JuMP.set_string_names_on_creation(reform_model)
-                    JuMP.string(constr_name, "[", JuMP.string(index), "]")
-                else
-                    ""
-                end
-                original_to_reform_constr_mapping[original_constr] = JuMP.add_constraint(reform_model, constr, jump_constr_name)
-            end,
-            sort(collect(constr_by_indexes))
-        )
-        reform_model[constr_name] = constrs
+        _register_constraint_object!(reform_model, original_to_reform_constr_mapping, original_model, constr_name, constr_by_indexes, original_to_reform_vars_mapping)
     end
+end
+
+# Method for scalar constraints (single empty tuple index)
+function _register_constraint_object!(reform_model, original_to_reform_constr_mapping::ConstraintMapping, original_model, constr_name, constr_by_indexes::Set{Tuple{}}, original_to_reform_vars_mapping::VariableMapping)
+    index = ()
+    original_constr = get_scalar_object(original_model, constr_name, index)
+    original_constr_obj = JuMP.constraint_object(original_constr)
+    mapped_func = _replace_vars_in_func(
+        original_constr_obj.func,
+        reform_model,
+        original_to_reform_vars_mapping
+    )
+    constr = JuMP.build_constraint(() -> error("todo."), mapped_func, original_constr_obj.set)
+    jump_constr_name = if JuMP.set_string_names_on_creation(reform_model)
+        string(constr_name)
+    else
+        ""
+    end
+    reform_constr = JuMP.add_constraint(reform_model, constr, jump_constr_name)
+    original_to_reform_constr_mapping[original_constr] = reform_constr
+    reform_model[constr_name] = reform_constr
+end
+
+# Method for indexed constraints
+function _register_constraint_object!(reform_model, original_to_reform_constr_mapping::ConstraintMapping, original_model, constr_name, constr_by_indexes, original_to_reform_vars_mapping::VariableMapping)
+    indexes = sort(collect(constr_by_indexes))
+    constrs = JuMP.Containers.container(
+        (index...) -> begin
+            original_constr = get_scalar_object(original_model, constr_name, index)
+            original_constr_obj = JuMP.constraint_object(original_constr)
+            mapped_func = _replace_vars_in_func(
+                original_constr_obj.func,
+                reform_model,
+                original_to_reform_vars_mapping
+            )
+            constr = JuMP.build_constraint(() -> error("todo."), mapped_func, original_constr_obj.set)
+            jump_constr_name = if JuMP.set_string_names_on_creation(reform_model)
+                JuMP.string(constr_name, "[", JuMP.string(index), "]")
+            else
+                ""
+            end
+            original_to_reform_constr_mapping[original_constr] = JuMP.add_constraint(reform_model, constr, jump_constr_name)
+        end,
+        indexes
+    )
+    reform_model[constr_name] = constrs
 end
 
 function _populate_subproblem_mapping(master_model, original_constr_expr::AffExpr, reform_constr, original_to_reform_vars_mapping::VariableMapping)
