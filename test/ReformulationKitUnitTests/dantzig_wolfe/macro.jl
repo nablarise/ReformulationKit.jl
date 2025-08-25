@@ -244,8 +244,8 @@ function test_unit_macro()
     @testset "[macro] basic functionality" begin
         test_macro_basic_gap_ok()
         test_macro_gap_with_penalties_ok()
-        #test_macro_single_index_patterns_ok()
-        #test_macro_no_index_patterns_ok()
+        test_macro_single_index_patterns_ok()
+        test_macro_no_index_patterns_ok()
     end
     
     @testset "[macro] error handling" begin
@@ -258,6 +258,6 @@ function test_unit_macro()
     
     @testset "[macro] compatibility and isolation" begin
         test_macro_compatibility_with_callback_functions_ok()
-        #test_macro_multiple_calls_no_conflicts_ok()
+        test_macro_multiple_calls_no_conflicts_ok()
     end
 end
