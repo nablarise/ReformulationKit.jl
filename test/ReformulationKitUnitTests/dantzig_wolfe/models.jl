@@ -61,7 +61,7 @@ function test_register_variables_updates_mapping_ok()
     
     @test length(mapping) == 1
     @test original_model[:x] in keys(mapping)
-    @test mapping[original_model[:x]] == reform_model[:x][()] # TODO: ugly!
+    @test mapping[original_model[:x]] == reform_model[:x]  # Clean access for scalar variables
 end
 
 # Tests for _register_constraints!()
@@ -260,11 +260,40 @@ function test_register_objective_master_preserves_constant_ok()
     @test reform_obj.terms[reform_model[:y][2]] == 5.0
 end
 
+function test_register_variables_scalar_clean_access()
+    original_model = Model()
+    @variable(original_model, x)  # Scalar variable (no index)
+    reform_model = Model()
+    mapping = VariableMapping()
+    
+    var_infos = Dict(
+        :x => Dict(
+            () => RK._original_var_info(original_model, :x, ())
+        )
+    )
+    
+    RK._register_variables!(reform_model, mapping, original_model, var_infos)
+    
+    # With the new implementation, scalar variables should be stored directly
+    @test haskey(reform_model.obj_dict, :x)
+    @test reform_model[:x] isa JuMP.VariableRef  # Direct VariableRef, not container
+    
+    # Clean access pattern - no need for ugly [()] indexing
+    scalar_var = reform_model[:x]
+    @test scalar_var isa JuMP.VariableRef
+    @test JuMP.owner_model(scalar_var) == reform_model
+    
+    # Variable mapping should work correctly
+    @test original_model[:x] in keys(mapping)
+    @test mapping[original_model[:x]] == scalar_var
+end
+
 function test_unit_models()
     @testset "[models] variable registration" begin
         test_register_variables_creates_vars_ok()
         test_register_variables_preserves_properties_ok()
         test_register_variables_updates_mapping_ok()
+        test_register_variables_scalar_clean_access()
     end
 
     @testset "[models] constraint registration" begin
