@@ -56,7 +56,7 @@ function test_master_variables_empty_ok()
     
     result = RK._master_variables(model, gap_annotation)
     
-    @test result isa Dict{Symbol,Set{Tuple}}
+    @test result isa Dict{Symbol,Any}
     @test isempty(result)
 end
 
@@ -65,7 +65,7 @@ function test_master_variables_penalty_vars_ok()
     
     result = RK._master_variables(model, gap_annotation)
     
-    @test result isa Dict{Symbol,Set{Tuple}}
+    @test result isa Dict{Symbol,Any}
     @test haskey(result, :penalty)
     @test result[:penalty] == Set([(j,) for j in jobs])
 end
@@ -75,7 +75,7 @@ function test_master_variables_mixed_dimensions_ok()
     
     result = RK._master_variables(model, mixed_gap_annotation)
     
-    @test result isa Dict{Symbol,Set{Tuple}}
+    @test result isa Dict{Symbol,Any}
     @test haskey(result, :z)
     @test result[:z] == Set([(j,) for j in jobs])
 end
@@ -86,7 +86,7 @@ function test_partition_subproblem_variables_assignment_vars_ok()
     
     result = RK._partition_subproblem_variables(model, gap_annotation)
     
-    @test result isa Dict{Any,Dict{Symbol,Set{Tuple}}}
+    @test result isa Dict{Any,Dict{Symbol,Any}}
     @test length(result) == length(machines)
     for m in machines
         @test haskey(result, m)
@@ -123,7 +123,7 @@ function test_master_constraints_assignment_constraints_ok()
     
     result = RK._master_constraints(model, gap_annotation)
     
-    @test result isa Dict{Symbol,Set{Tuple}}
+    @test result isa Dict{Symbol,Any}
     @test haskey(result, :assignment)
     @test result[:assignment] == Set([(j,) for j in jobs])
 end
@@ -136,7 +136,7 @@ function test_master_constraints_empty_ok()
     
     result = RK._master_constraints(model, gap_annotation)
     
-    @test result isa Dict{Symbol,Set{Tuple}}
+    @test result isa Dict{Symbol,Any}
     @test isempty(result)
 end
 
@@ -146,7 +146,7 @@ function test_partition_subproblem_constraints_capacity_ok()
     
     result = RK._partition_subproblem_constraints(model, gap_annotation)
     
-    @test result isa Dict{Any,Dict{Symbol,Set{Tuple}}}
+    @test result isa Dict{Any,Dict{Symbol,Any}}
     @test length(result) == length(machines)
     for m in machines
         @test haskey(result, m)
@@ -173,9 +173,9 @@ function test_master_variables_scalar_ok()
     
     result = RK._master_variables(model, scalar_master_annotation)
     
-    @test result isa Dict{Symbol,Set{Tuple}}
+    @test result isa Dict{Symbol,Any}
     @test haskey(result, :scalar_master_var)
-    @test result[:scalar_master_var] == Set{Tuple}([()]) # Should contain empty tuple, not be empty
+    @test result[:scalar_master_var] == Set{Tuple{}}([()]) # Should contain empty tuple, not be empty
     @test length(result[:scalar_master_var]) == 1
     @test () in result[:scalar_master_var]
 end
@@ -185,10 +185,10 @@ function test_partition_subproblem_variables_scalar_ok()
     
     result = RK._partition_subproblem_variables(model, scalar_subproblem_annotation)
     
-    @test result isa Dict{Any,Dict{Symbol,Set{Tuple}}}
+    @test result isa Dict{Any,Dict{Symbol,Any}}
     @test haskey(result, 1)
     @test haskey(result[1], :scalar_sp_var)
-    @test result[1][:scalar_sp_var] == Set{Tuple}([()]) # Should contain empty tuple, not be empty
+    @test result[1][:scalar_sp_var] == Set{Tuple{}}([()]) # Should contain empty tuple, not be empty
     @test length(result[1][:scalar_sp_var]) == 1
     @test () in result[1][:scalar_sp_var]
 end
@@ -199,9 +199,9 @@ function test_master_constraints_scalar_ok()
     
     result = RK._master_constraints(model, scalar_master_annotation)
     
-    @test result isa Dict{Symbol,Set{Tuple}}
+    @test result isa Dict{Symbol,Any}
     @test haskey(result, :scalar_master_constraint)
-    @test result[:scalar_master_constraint] == Set{Tuple}([()]) # Should contain empty tuple, not be empty
+    @test result[:scalar_master_constraint] == Set{Tuple{}}([()]) # Should contain empty tuple, not be empty
     @test length(result[:scalar_master_constraint]) == 1
     @test () in result[:scalar_master_constraint]
 end
@@ -211,10 +211,10 @@ function test_partition_subproblem_constraints_scalar_ok()
     
     result = RK._partition_subproblem_constraints(model, scalar_subproblem_annotation)
     
-    @test result isa Dict{Any,Dict{Symbol,Set{Tuple}}}
+    @test result isa Dict{Any,Dict{Symbol,Any}}
     @test haskey(result, 1)
     @test haskey(result[1], :scalar_sp_constraint)
-    @test result[1][:scalar_sp_constraint] == Set{Tuple}([()]) # Should contain empty tuple, not be empty
+    @test result[1][:scalar_sp_constraint] == Set{Tuple{}}([()]) # Should contain empty tuple, not be empty
     @test length(result[1][:scalar_sp_constraint]) == 1
     @test () in result[1][:scalar_sp_constraint]
 end

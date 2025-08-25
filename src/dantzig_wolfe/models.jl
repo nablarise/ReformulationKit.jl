@@ -26,7 +26,6 @@ function _original_var_info(original_model, var_name, index)
     )
 end
 
-
 function _replace_vars_in_func(func::JuMP.AffExpr, target_model, original_to_subproblem_vars_mapping::VariableMapping; preserve_constant::Bool = true)
     terms = [
         original_to_subproblem_vars_mapping[var] => coeff 

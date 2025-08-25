@@ -154,6 +154,7 @@ include("dantzig_wolfe/partitionning.jl")
 include("dantzig_wolfe/models.jl")
 include("dantzig_wolfe/reformulation.jl")
 include("dantzig_wolfe/main.jl")
+include("dantzig_wolfe/macro.jl")
 
 function run()
     @testset "ReformulationKit Unit Tests" begin
@@ -162,6 +163,7 @@ function run()
         test_unit_models()
         test_unit_reformulation_structure()
         test_unit_main_decomposition()
+        test_unit_macro()
     end
 end
 
