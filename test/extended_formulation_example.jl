@@ -102,11 +102,9 @@ struct BinProfile
     nb_bins::Int
 end
 
-struct BinProfileFeasiblePattern
-    id::Int
-end
+struct ColumnIndexGenerator end
 
-BinProfileFeasiblePatterns(bin_profiles::Vector{BinProfile}, x) = [BinProfileFeasiblePattern(i) for i in 1:x]
+BinProfileFeasiblePatterns(bin_profiles::BinProfile) = [ColumnIndexGenerator()]
 
 function blabla()
     data = BinPackingInstance(
@@ -117,7 +115,7 @@ function blabla()
         Int[3, 1, 2] # nb_bins
     )
 
-    bin_profile_ids = collect(1:data.nb_bin_profiles)
+    #bin_profile_ids = collect(1:data.nb_bin_profiles)
     bin_profiles = BinProfile[
         BinProfile(
             id, # id
@@ -130,15 +128,15 @@ function blabla()
 
     master = Model()
 
-    @variable(master, λ[sp in bin_profile_ids, q in BinProfileFeasiblePatterns(bin_profiles, sp)] >= 0, Int)
+    @variable(master, λ[sp in bin_profiles, q in BinProfileFeasiblePatterns(sp)] >= 0, Int)
 
     # Convexity constraint.
-    # @constraint(master, convexity_lb[sp in bin_profiles], 
-    #     sum(λ[sp, q] for q in BinProfileFeasiblePatterns(sp)) >= 0
-    # )
-    # @constraint(master, convexity_ub[sp in bin_profiles],
-    #     sum(λ[sp, q] for q in BinProfileFeasiblePatterns(sp)) <= sp.nb_bins
-    # )
+    @constraint(master, convexity_lb[sp in bin_profiles], 
+        sum(λ[sp, q] for q in BinProfileFeasiblePatterns(sp)) >= 0
+    )
+    @constraint(master, convexity_ub[sp in bin_profiles],
+        sum(λ[sp, q] for q in BinProfileFeasiblePatterns(sp)) <= sp.nb_bins
+    )
     return master
 end
 blabla()
