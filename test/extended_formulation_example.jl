@@ -102,9 +102,19 @@ struct BinProfile
     nb_bins::Int
 end
 
-struct ColumnIndexGenerator end
+struct MembershipCallback end
 
-BinProfileFeasiblePatterns(bin_profiles::BinProfile) = [ColumnIndexGenerator()]
+struct ColumnIndexGenerator
+    subproblem_id::Int # should be the hash.
+    item_assigned::Dict{Int, MembershipCallback}
+end
+
+function BinProfileFeasiblePatterns(bin_profile::BinProfile)
+    item_assigned_membership_cb = Dict{Int,MembershipCallback}(
+        item => MembershipCallback() for item in bin_profile.items
+    )
+    return [ColumnIndexGenerator(item_assigned_membership_cb)]
+end
 
 function blabla()
     data = BinPackingInstance(
@@ -137,6 +147,19 @@ function blabla()
     @constraint(master, convexity_ub[sp in bin_profiles],
         sum(λ[sp, q] for q in BinProfileFeasiblePatterns(sp)) <= sp.nb_bins
     )
+
+    #     # Item assignement covering constraint.
+    items = 1:data.nb_items
+    @constraint(
+        master, 
+        assign_item[i in items], 
+        sum(q.item_assigned[i] * λ[sp, q] for sp in bin_profiles, q in BinProfileFeasiblePatterns(sp)) >= 1
+    )
+
+#     # Objective function
+#     @objective(master, Min, 
+#         sum(p.cost * λ[sp, q] for sp in bin_profiles, q in BinProfileFeasiblePatterns(sp))
+#     )
     return master
 end
 blabla()
