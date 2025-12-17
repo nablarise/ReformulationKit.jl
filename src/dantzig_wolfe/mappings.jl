@@ -167,7 +167,6 @@ function Base.show(io::IO, mapping::VariableMapping)
     print(io, "VariableMapping with $(length(mapping.mapping)) variable mappings")
 end
 
-
 """
 ConstraintMapping
 

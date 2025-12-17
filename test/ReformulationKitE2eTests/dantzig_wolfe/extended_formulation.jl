@@ -1,4 +1,4 @@
-using JuMP
+using JuMP, GLPK, MatheuristicKit
 
 struct BinPackingInstance
     nb_items::Int
@@ -8,7 +8,9 @@ struct BinPackingInstance
     nb_bins::Vector{Int}
 end
 
-struct BinProfile
+abstract type AbstractSubproblemIndex end
+
+struct BinProfile <: AbstractSubproblemIndex
     id::Int
     items::Vector{Int}
     item_weights::Vector{Int}
@@ -17,6 +19,30 @@ struct BinProfile
 end
 
 Base.show(io::IO, bp::BinProfile) = print(io, "#$(bp.id)")
+
+# @pattern BinProfileFeasiblePatterns(bin_profile::BinProfile, subproblem_model) begin
+#     @variable(subproblem_model, assign_item[i in bin_profile.items], Bin)
+#     @constraint(subproblem_model, sum(bin_profile.item_weights[i] * assign_item[i] for i in bin_profile.items) <= bin_profile.capacity)
+#     @cost(subproblem_model, Min, 1.0)
+#     @lower_multiplicity 0
+#     @upper_multiplicity bin_profile.nb_bins
+# end
+
+function _generate_subproblem(bin_profile::BinProfile)
+    subproblem = Model()
+    _generate_subproblem_inner!(subproblem, bin_profile)
+    return subproblem
+end
+
+function _generate_subproblem_inner!(subproblem_model, bin_profile::BinProfile)
+    @variable(subproblem_model, assign_item[i in bin_profile.items], Bin) # Direct from user
+    @constraint(subproblem_model, sum(bin_profile.item_weights[i] * assign_item[i] for i in bin_profile.items) <= bin_profile.capacity) # Direct from user
+    @objective(subproblem_model, Min, 1.0) # automatic from @cost
+    
+
+    #@lower_multiplicity 0
+    #@upper_multiplicity bin_profile.nb_bins
+end
 
 struct MembershipCallback end
 
@@ -56,7 +82,6 @@ function test_e2e_extended_formulation()
         Int[3, 1, 2] # nb_bins
     )
 
-    #bin_profile_ids = collect(1:data.nb_bin_profiles)
     bin_profiles = BinProfile[
         BinProfile(
             id, # id
@@ -92,7 +117,30 @@ function test_e2e_extended_formulation()
         sum(q.cost() * λ[sp, q] for sp in bin_profiles, q in BinProfileFeasiblePatterns(sp))
     )
 
-    println(master)
+    subproblems = Dict(
+        bin_profile.id => _generate_subproblem(bin_profile) for bin_profile in bin_profiles
+    )
 
-    return master
+    convexity_constraints_lb = Dict(bin_profile.id => convexity_lb[bin_profile] for bin_profile in bin_profiles)
+    convexity_constraints_ub = Dict(bin_profile.id => convexity_ub[bin_profile] for bin_profile in bin_profiles)
+
+    reformulation = ReformulationKit.DantzigWolfeReformulation(
+        master,
+        subproblems,
+        convexity_constraints_lb,
+        convexity_constraints_ub
+    )
+
+    @show ReformulationKit.master(reformulation)
+    @show ReformulationKit.subproblems(reformulation)
+
+    # Set optimizers for master and subproblems
+    JuMP.set_optimizer(ReformulationKit.master(reformulation), GLPK.Optimizer)
+    for (sp_id, sp_model) in ReformulationKit.subproblems(reformulation)
+        JuMP.set_optimizer(sp_model, GLPK.Optimizer)
+    end
+
+    # Run column generation
+    result = MatheuristicKit.ColGen.run_column_generation(reformulation)
+    println("Optimal value: $(result.master_lp_obj)")
 end
