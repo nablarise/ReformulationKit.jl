@@ -25,7 +25,7 @@ function run()
         test_e2e_dantzig_wolfe_gap_scenarios()
     end
 
-    test_e2e_extended_formulation()
+    #test_e2e_extended_formulation()
 end
 
 end

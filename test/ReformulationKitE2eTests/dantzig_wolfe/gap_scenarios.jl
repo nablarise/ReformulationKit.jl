@@ -44,18 +44,17 @@ function test_e2e_basic_gap_decomposition_ok()
     # === MAPPING STRUCTURES CONTENT VALIDATION ===
     # Test all subproblems have proper mapping extensions
     for (m, sp) in subproblems
-        @test haskey(sp.ext, :dw_coupling_constr_mapping)
-        @test haskey(sp.ext, :dw_sp_var_original_cost)
-        @test isa(sp.ext[:dw_coupling_constr_mapping], ReformulationKit.CouplingConstraintMapping)
-        @test isa(sp.ext[:dw_sp_var_original_cost], ReformulationKit.OriginalCostMapping)
+        @test haskey(sp.ext, :dw_colgen_callbacks)
+        @test isa(RK.coupling_mapping(sp), ReformulationKit.CouplingConstraintMapping)
+        @test isa(RK.cost_mapping(sp), ReformulationKit.OriginalCostMapping)
         
         # Test original cost mapping using helper methods
-        cost_mapping = sp.ext[:dw_sp_var_original_cost]
+        cost_mapping = RK.cost_mapping(sp)
         @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 1])) == c[m,1]
         @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 2])) == c[m,2]
         
         # Test coupling constraint mapping structure
-        coupling_mapping = sp.ext[:dw_coupling_constr_mapping]
+        coupling_mapping = RK.coupling_mapping(sp)
         @test isa(coupling_mapping, ReformulationKit.CouplingConstraintMapping)
         @test length(coupling_mapping) == 2  # Two variables with constraint coefficients
         
@@ -213,13 +212,13 @@ function test_e2e_gap_with_penalties_complete_validation_ok()
         sp = subproblems[m]
         
         # Test original cost mapping using helper methods
-        cost_mapping = sp.ext[:dw_sp_var_original_cost]
+        cost_mapping = RK.cost_mapping(sp)
         @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 1])) == Float64(assignment_costs[m, 1])
         @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 2])) == Float64(assignment_costs[m, 2])
         @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 3])) == Float64(assignment_costs[m, 3])
         
         # Test coupling constraint mapping structure
-        coupling_mapping = sp.ext[:dw_coupling_constr_mapping]
+        coupling_mapping = RK.coupling_mapping(sp)
         @test isa(coupling_mapping, ReformulationKit.CouplingConstraintMapping)
         @test length(coupling_mapping) == 3  # Three variables with constraint coefficients
         

@@ -145,25 +145,6 @@ function test_dantzig_wolfe_decomposition_objective_decomposition_ok()
     end
 end
 
-function test_dantzig_wolfe_decomposition_subproblem_extensions_ok()
-    model, machines, jobs = create_gap_with_penalty()
-    
-    reformulation = RK.dantzig_wolfe_decomposition(model, gap_annotation)
-    
-    subproblems = RK.subproblems(reformulation)
-    for m in machines
-        sp = subproblems[m]
-        
-        # Check coupling constraint mapping extension exists
-        @test haskey(sp.ext, :dw_coupling_constr_mapping)
-        @test sp.ext[:dw_coupling_constr_mapping] isa ReformulationKit.CouplingConstraintMapping
-        
-        # Check original cost mapping extension exists
-        @test haskey(sp.ext, :dw_sp_var_original_cost)
-        @test sp.ext[:dw_sp_var_original_cost] isa ReformulationKit.OriginalCostMapping
-    end
-end
-
 function test_dantzig_wolfe_decomposition_minimal_problem_ok()
     model = create_minimal_gap()
     
@@ -192,10 +173,6 @@ function test_unit_main_decomposition()
         test_dantzig_wolfe_decomposition_convexity_constraints_ok()
         test_dantzig_wolfe_decomposition_variable_properties_preserved_ok()
         test_dantzig_wolfe_decomposition_objective_decomposition_ok()
-    end
-
-    @testset "[main] extensions and mappings" begin
-        test_dantzig_wolfe_decomposition_subproblem_extensions_ok()
     end
 
     @testset "[main] edge cases" begin

@@ -21,6 +21,7 @@ include("dantzig_wolfe/reformulation.jl")
 include("dantzig_wolfe/partitionning.jl")
 include("dantzig_wolfe/models.jl")
 include("dantzig_wolfe/macro.jl")
+include("dantzig_wolfe/callback_interface.jl")
 
 
 """
@@ -163,13 +164,13 @@ function dantzig_wolfe_decomposition(model::Model, dw_annotation)
         convexity_constraints_ub[sp_id] = conv_ub[sp_id]
     end
 
+    _init_callback_extension_dict!(subproblem_models)
+
     _subproblem_solution_to_master_constr_mapping!(
         subproblem_models, master_model, original_to_reform_vars_mapping, original_to_reform_constrs_mapping
     )
 
-    _subproblem_solution_to_original_cost_mapping!(
-        subproblem_models, master_model, model, original_to_reform_vars_mapping
-    )
+    _populate_cost_mapping(master_model, JuMP.objective_function(model), original_to_reform_vars_mapping)
 
     return DantzigWolfeReformulation(master_model, subproblem_models, convexity_constraints_lb, convexity_constraints_ub)
 end

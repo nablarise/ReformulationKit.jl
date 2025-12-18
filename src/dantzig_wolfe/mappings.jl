@@ -204,3 +204,46 @@ Base.length(mapping::ConstraintMapping) = length(mapping.mapping)
 function Base.show(io::IO, mapping::ConstraintMapping)
     print(io, "ConstraintMapping with $(length(mapping.mapping)) constraint mappings")
 end
+
+"""
+    reformulation_kit_callbacks.jl
+
+Default callback implementation for ReformulationKit's Dantzig-Wolfe reformulations.
+This implementation works with ReformulationKit's existing mapping data structures
+(CouplingConstraintMapping and OriginalCostMapping).
+"""
+
+"""
+    RK.MappingBasedCallbacks <: AbstractColumnGenerationCallbacks
+
+Default callback implementation that works with ReformulationKit's mapping data structures.
+
+This callback wraps ReformulationKit's `CouplingConstraintMapping` and `OriginalCostMapping`
+to provide the column generation interface. It allows MatheuristicKit to work with
+ReformulationKit without circular dependencies.
+
+# Fields
+- `coupling_constr_mapping::RK.CouplingConstraintMapping`: Maps subproblem variables to their coefficients in master coupling constraints
+- `original_cost_mapping::RK.OriginalCostMapping`: Maps subproblem variables to their original objective coefficients
+
+# Example
+```julia
+# In ReformulationKit's dantzig_wolfe_decomposition:
+coupling_mapping = CouplingConstraintMapping()
+cost_mapping = OriginalCostMapping()
+# ... populate mappings ...
+
+callbacks = MappingBasedCallbacks(coupling_mapping, cost_mapping)
+subproblem.ext[:dw_colgen_callbacks] = callbacks
+```
+"""
+struct MappingBasedCallbacks #<: AbstractColumnGenerationCallbacks
+    coupling_constr_mapping::CouplingConstraintMapping
+    original_cost_mapping::OriginalCostMapping
+end
+
+init_mapping_based_callback!(model::JuMP.Model) = model.ext[:dw_colgen_callbacks] = MappingBasedCallbacks(CouplingConstraintMapping(), OriginalCostMapping())
+coupling_mapping(model::JuMP.Model) = model.ext[:dw_colgen_callbacks].coupling_constr_mapping
+cost_mapping(model::JuMP.Model) = model.ext[:dw_colgen_callbacks].original_cost_mapping
+coupling_mapping_of_owner_model(var::JuMP.VariableRef) = JuMP.owner_model(var).ext[:dw_colgen_callbacks].coupling_constr_mapping
+cost_mapping_of_owner_model(var::JuMP.VariableRef) = JuMP.owner_model(var).ext[:dw_colgen_callbacks].original_cost_mapping
