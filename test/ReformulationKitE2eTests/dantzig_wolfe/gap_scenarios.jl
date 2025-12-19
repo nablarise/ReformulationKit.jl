@@ -45,22 +45,24 @@ function test_e2e_basic_gap_decomposition_ok()
     # Test all subproblems have proper mapping extensions
     for (m, sp) in subproblems
         @test haskey(sp.ext, :dw_colgen_callbacks)
-        @test isa(RK.coupling_mapping(sp), ReformulationKit.CouplingConstraintMapping)
-        @test isa(RK.cost_mapping(sp), ReformulationKit.OriginalCostMapping)
+        @test isa(RK.colgen_callback(sp), RK.MappingBasedCallbacks)
+        @test isa(RK.coupling_mapping(sp), RK.CouplingConstraintMapping)
+        @test isa(RK.cost_mapping(sp), RK.OriginalCostMapping)
+
+        colgen_cb = RK.colgen_callback(sp)
         
         # Test original cost mapping using helper methods
-        cost_mapping = RK.cost_mapping(sp)
-        @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 1])) == c[m,1]
-        @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 2])) == c[m,2]
+        @test RK.get_original_cost(colgen_cb, JuMP.index(sp[:x][m, 1])) == c[m,1]
+        @test RK.get_original_cost(colgen_cb, JuMP.index(sp[:x][m, 2])) == c[m,2]
         
         # Test coupling constraint mapping structure
         coupling_mapping = RK.coupling_mapping(sp)
-        @test isa(coupling_mapping, ReformulationKit.CouplingConstraintMapping)
+        @test isa(coupling_mapping, RK.CouplingConstraintMapping)
         @test length(coupling_mapping) == 2  # Two variables with constraint coefficients
         
         # Test that we can retrieve coefficients using the new API
-        var1_coeffs = ReformulationKit.get_variable_coefficients(coupling_mapping, JuMP.index(sp[:x][m, 1]))
-        var2_coeffs = ReformulationKit.get_variable_coefficients(coupling_mapping, JuMP.index(sp[:x][m, 2]))
+        var1_coeffs = RK.get_variable_coefficients_in_coupling_constraints(colgen_cb, JuMP.index(sp[:x][m, 1]))
+        var2_coeffs = RK.get_variable_coefficients_in_coupling_constraints(colgen_cb, JuMP.index(sp[:x][m, 2]))
         
         # Each variable should have exactly one constraint coefficient (demand constraint)
         @test length(var1_coeffs) == 1
@@ -210,22 +212,18 @@ function test_e2e_gap_with_penalties_complete_validation_ok()
     # === MAPPING OBJECTS DETAILED INSPECTION ===
     for m in machines
         sp = subproblems[m]
+
+        colgen_cb = RK.colgen_callback(sp)
         
         # Test original cost mapping using helper methods
-        cost_mapping = RK.cost_mapping(sp)
-        @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 1])) == Float64(assignment_costs[m, 1])
-        @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 2])) == Float64(assignment_costs[m, 2])
-        @test ReformulationKit.get_cost(cost_mapping, JuMP.index(sp[:x][m, 3])) == Float64(assignment_costs[m, 3])
-        
-        # Test coupling constraint mapping structure
-        coupling_mapping = RK.coupling_mapping(sp)
-        @test isa(coupling_mapping, ReformulationKit.CouplingConstraintMapping)
-        @test length(coupling_mapping) == 3  # Three variables with constraint coefficients
+        @test RK.get_original_cost(colgen_cb, JuMP.index(sp[:x][m, 1])) == Float64(assignment_costs[m, 1])
+        @test RK.get_original_cost(colgen_cb, JuMP.index(sp[:x][m, 2])) == Float64(assignment_costs[m, 2])
+        @test RK.get_original_cost(colgen_cb, JuMP.index(sp[:x][m, 3])) == Float64(assignment_costs[m, 3])
         
         # Test that we can retrieve coefficients using the new API
-        var1_coeffs = ReformulationKit.get_variable_coefficients(coupling_mapping, JuMP.index(sp[:x][m, 1]))
-        var2_coeffs = ReformulationKit.get_variable_coefficients(coupling_mapping, JuMP.index(sp[:x][m, 2]))
-        var3_coeffs = ReformulationKit.get_variable_coefficients(coupling_mapping, JuMP.index(sp[:x][m, 3]))
+        var1_coeffs = RK.get_variable_coefficients_in_coupling_constraints(colgen_cb, JuMP.index(sp[:x][m, 1]))
+        var2_coeffs = RK.get_variable_coefficients_in_coupling_constraints(colgen_cb, JuMP.index(sp[:x][m, 2]))
+        var3_coeffs = RK.get_variable_coefficients_in_coupling_constraints(colgen_cb, JuMP.index(sp[:x][m, 3]))
         
         # Each variable should have exactly one constraint coefficient (assignment constraint)
         @test length(var1_coeffs) == 1

@@ -67,3 +67,11 @@ This is used to update the subproblem objective before pricing optimization.
 - `Dict{MOI.VariableIndex, Float64}`: Mapping from subproblem variable indices to reduced costs
 """
 function compute_reduced_costs end
+
+"""
+    get_variable_coefficients_in_coupling_constraints(callback, variable_index::MOI.VariableIndex)
+
+Get all constraint coefficients for a variable. Returns a vector of tuples containing:
+(constraint_type, constraint_idx, coefficient)
+"""
+function get_variable_coefficients_in_coupling_constraints end

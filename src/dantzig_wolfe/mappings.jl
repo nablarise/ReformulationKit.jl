@@ -48,24 +48,6 @@ end
 
 
 """
-    get_variable_coefficients(mapping::CouplingConstraintMapping, variable_index::MOI.VariableIndex)
-
-Get all constraint coefficients for a variable. Returns a vector of tuples containing:
-(constraint_type, constraint_value, coefficient)
-
-Note: constraint_type is DataType (returned by typeof(constraint_index)) rather than 
-Type{<:MOI.ConstraintIndex} to avoid Julia type system conflicts.
-
-This enables efficient patterns for:
-- Reduced cost computation: reduced_cost = original_cost - sum(dual[constraint] * coeff for (type, value, coeff) in coefficients)
-- Column addition: for (type, value, coeff) in coefficients -> add to constraint type(value)
-"""
-function get_variable_coefficients(mapping::CouplingConstraintMapping, variable_index::MOI.VariableIndex)
-    return get(mapping.data, variable_index, Vector{Tuple{DataType, Int64, Float64}}())
-end
-
-
-"""
 OriginalCostMapping
 
 Stores the original objective function coefficients for subproblem variables.
@@ -78,16 +60,6 @@ end
 function OriginalCostMapping()
     return OriginalCostMapping(Dict{MOI.VariableIndex, Float64}())
 end
-
-"""
-    get_cost(mapping::OriginalCostMapping, variable_index::MOI.VariableIndex)
-
-Get the original cost of a variable using its MOI index.
-"""
-function get_cost(mapping::OriginalCostMapping, variable_index::MOI.VariableIndex)
-    return get(mapping.data, variable_index, 0.0)
-end
-
 
 """
     set_cost!(mapping::OriginalCostMapping, variable_ref, cost::Float64)
@@ -243,7 +215,16 @@ struct MappingBasedCallbacks #<: AbstractColumnGenerationCallbacks
 end
 
 init_mapping_based_callback!(model::JuMP.Model) = model.ext[:dw_colgen_callbacks] = MappingBasedCallbacks(CouplingConstraintMapping(), OriginalCostMapping())
+colgen_callback(model::JuMP.Model) = model.ext[:dw_colgen_callbacks]
 coupling_mapping(model::JuMP.Model) = model.ext[:dw_colgen_callbacks].coupling_constr_mapping
 cost_mapping(model::JuMP.Model) = model.ext[:dw_colgen_callbacks].original_cost_mapping
 coupling_mapping_of_owner_model(var::JuMP.VariableRef) = JuMP.owner_model(var).ext[:dw_colgen_callbacks].coupling_constr_mapping
 cost_mapping_of_owner_model(var::JuMP.VariableRef) = JuMP.owner_model(var).ext[:dw_colgen_callbacks].original_cost_mapping
+
+function get_variable_coefficients_in_coupling_constraints(callback::MappingBasedCallbacks, variable_index::MOI.VariableIndex)
+    return get(callback.coupling_constr_mapping.data, variable_index, Vector{Tuple{DataType, Int64, Float64}}())
+end
+
+function get_original_cost(callbacks::MappingBasedCallbacks, var_idx::MOI.VariableIndex)
+    return get(callbacks.original_cost_mapping.data, var_idx, 0.0)
+end
